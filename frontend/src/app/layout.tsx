@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Exo_2, IBM_Plex_Sans } from "next/font/google";
 import { LeadRequestModal } from "@/components/forms/LeadRequestModal";
+import { LegacyExternalScripts } from "@/components/analytics/LegacyExternalScripts";
 import { SiteFooter } from "@/components/SiteChrome";
 import { HomeDispatcherHeader } from "@/components/home/HomeDispatcherHeader";
 import { getNavigationData } from "@/lib/content";
@@ -51,6 +52,7 @@ export default async function RootLayout({
         <HomeDispatcherHeader workTypes={navigation.workTypes} />
         <main>{children}</main>
         <SiteFooter navigation={navigation} />
+        <LegacyExternalScripts />
         <LeadRequestModal />
       </body>
     </html>

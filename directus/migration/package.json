@@ -1,0 +1,24 @@
+{
+  "name": "katet-directus-migration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:env": "node src/check-env.mjs",
+    "check:env:media": "node src/check-env.mjs --media",
+    "import:wp": "node src/import-wp.mjs",
+    "import:wp:dry": "node src/import-wp.mjs --dry-run",
+    "import:wp:sample": "node src/import-wp.mjs --limit=5",
+    "export:city-seo": "node src/export-city-seo.mjs",
+    "export:city-seo:sample": "node src/export-city-seo.mjs --limit=5",
+    "import:media": "node src/import-media.mjs",
+    "import:media:dry": "node src/import-media.mjs --dry-run",
+    "import:media:inline": "node src/import-media.mjs --inline",
+    "import:media:inline:dry": "node src/import-media.mjs --inline --dry-run",
+    "import:media:sample": "node src/import-media.mjs --limit=10",
+    "sync:filter-keys": "node src/sync-filter-keys.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.1"
+  }
+}

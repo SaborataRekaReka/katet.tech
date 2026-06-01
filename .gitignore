@@ -1,0 +1,18 @@
+source/
+local/mysql-data/
+local/wp-local/
+directus/.env
+directus/postgres-data/
+directus/uploads/
+directus/extensions/
+directus/migration/node_modules/
+# transient artifacts
+_deploy_bundle/
+frontend/tmp/
+build-last.log
+tmp-*.txt
+tmp-*.csv
+katet-deploy-*.tar.gz
+*.sql
+*.sql.gz
+*.tar.gz

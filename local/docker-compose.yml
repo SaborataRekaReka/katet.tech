@@ -1,0 +1,54 @@
+services:
+  db:
+    image: mariadb:10.11
+    container_name: katet-wp-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: katet_local
+      MYSQL_USER: katet_local
+      MYSQL_PASSWORD: katet_local_password
+      MYSQL_ROOT_PASSWORD: katet_root_password
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  wordpress:
+    image: wordpress:6.8.1-php8.2-apache
+    container_name: katet-wp
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: katet_local
+      WORDPRESS_DB_USER: katet_local
+      WORDPRESS_DB_PASSWORD: katet_local_password
+    volumes:
+      - ../source/wp-local:/var/www/html
+      - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+
+  wpcli:
+    image: wordpress:cli-php8.2
+    container_name: katet-wp-cli
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: katet_local
+      WORDPRESS_DB_USER: katet_local
+      WORDPRESS_DB_PASSWORD: katet_local_password
+    volumes:
+      - ../source/wp-local:/var/www/html
+    working_dir: /var/www/html
+    entrypoint: ["wp"]
+
+volumes:
+  db-data:

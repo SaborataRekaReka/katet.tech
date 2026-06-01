@@ -1,0 +1,21 @@
+import { DirectoryPage } from "@/components/ContentViews";
+import { getWorkTypesIndex } from "@/lib/content";
+import { metadataFrom } from "@/lib/format";
+
+export const revalidate = 300;
+
+export function generateMetadata() {
+  return metadataFrom({ title: "Услуги спецтехники", url_path: "/tipy-rabot/" }, "Услуги спецтехники");
+}
+
+export default async function WorkTypesIndex() {
+  const links = await getWorkTypesIndex(100);
+  return (
+    <DirectoryPage
+      title="Услуги спецтехники"
+      description="Задачи, для которых можно заказать технику Катет с экипажем."
+      links={links}
+      showIllustrations
+    />
+  );
+}

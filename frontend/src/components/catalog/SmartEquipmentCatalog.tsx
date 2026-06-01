@@ -193,7 +193,7 @@ function compactCategoryTitle(name: string) {
 }
 
 function parseDimensionFromCategoryName(value: string): ParsedDimension | null {
-  const source = value.toLocaleLowerCase("ru-RU").replaceAll(",", ".");
+  const source = value.toLocaleLowerCase("ru-RU").replace(/,/g, ".");
 
   const tonMatch = source.match(/(\d+(?:\.\d+)?)\s*(?:тонн|тонны|тонна|т)\b/u);
   if (tonMatch) {
@@ -538,7 +538,7 @@ export function SmartEquipmentCatalog({
         const meta = workMetaBySlug.get(slug);
         return {
           slug,
-          name: meta?.name || slug.replaceAll("-", " "),
+          name: meta?.name || slug.replace(/-/g, " "),
           url_path: meta?.url_path || null,
           count,
         };

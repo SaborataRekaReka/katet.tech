@@ -4,6 +4,8 @@ type IpApiResponse = {
   city?: string | null;
 };
 
+const IPAPI_TIMEOUT_MS = 1800;
+
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, max-age=0",
 };
@@ -37,17 +39,29 @@ function readHeaderCity(request: Request) {
 
 async function fetchCityByIp(ip: string | null) {
   const endpoint = ip ? `https://ipapi.co/${encodeURIComponent(ip)}/json/` : "https://ipapi.co/json/";
-  const response = await fetch(endpoint, {
-    cache: "no-store",
-    headers: {
-      "User-Agent": "Katet City Detector",
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, IPAPI_TIMEOUT_MS);
 
-  if (!response.ok) return null;
+  try {
+    const response = await fetch(endpoint, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Katet City Detector",
+      },
+      signal: controller.signal,
+    });
 
-  const payload = (await response.json()) as IpApiResponse;
-  return normalizeCityName(payload.city);
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as IpApiResponse;
+    return normalizeCityName(payload.city);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function GET(request: Request) {

@@ -17,7 +17,7 @@ const sectionLinks: Record<string, string> = {
 const genericEyebrows = new Set(["страница"]);
 
 function normalizeBreadcrumbLabel(value: string) {
-  return value.toLocaleLowerCase("ru-RU").replaceAll("ё", "е").replace(/\s+/g, " ").trim();
+  return value.toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
 }
 
 function defaultHeroBreadcrumbs(eyebrow: string, title: string): BreadcrumbItem[] {

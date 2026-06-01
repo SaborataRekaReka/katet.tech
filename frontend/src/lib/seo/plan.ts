@@ -1,0 +1,219 @@
+import "server-only";
+
+import { run } from "./db";
+import { loadContext } from "./seed";
+import { analyzeGap } from "./siteGap";
+import { getScoringConfig } from "./settings";
+import { qualifies, score, type ScoringInput } from "./scoring";
+import type { CompanyContext, Intent, PageType, RecommendedAction } from "./types";
+
+/**
+ * Content plan generator (Task.md §15, §20). For each scored cluster it runs the
+ * gap analysis + scoring model, picks a recommended action, and writes a
+ * content_plan_item with a transparent decision log (Task.md §29).
+ */
+
+const TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y",
+  к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
+  х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .split("")
+    .map((ch) => TRANSLIT[ch] ?? ch)
+    .join("")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .slice(0, 6)
+    .join("-");
+}
+
+type ClusterRow = {
+  id: number;
+  cluster_name: string | null;
+  main_intent: Intent | null;
+  cluster_type: PageType | null;
+  primary_keyword: string | null;
+  total_frequency: number;
+  region: string | null;
+};
+
+type ContextSummary = {
+  services: CompanyContext[];
+  hasFaq: boolean;
+  hasCase: boolean;
+  hasAdvantage: boolean;
+  regions: string[];
+};
+
+function summarizeContext(context: CompanyContext[]): ContextSummary {
+  return {
+    services: context.filter(
+      (c) => c.context_type === "service" || c.context_type === "service_category" || c.context_type === "equipment_type",
+    ),
+    hasFaq: context.some((c) => c.context_type === "faq"),
+    hasCase: context.some((c) => c.context_type === "case"),
+    hasAdvantage: context.some((c) => c.context_type === "advantage"),
+    regions: context.filter((c) => c.context_type === "region").map((c) => c.name.toLowerCase()),
+  };
+}
+
+function matchService(primaryKeyword: string, services: CompanyContext[]): CompanyContext | null {
+  const text = primaryKeyword.toLowerCase();
+  let best: CompanyContext | null = null;
+  for (const service of services) {
+    const name = service.name.toLowerCase();
+    const head = name.split(" ")[0];
+    if (text.includes(name) || (head.length > 3 && text.includes(head))) {
+      best = service;
+      break;
+    }
+  }
+  return best;
+}
+
+const ACTION_TO_STATUS: Record<RecommendedAction, string> = {
+  create_new_page: "pending_review",
+  update_existing_page: "pending_review",
+  add_faq_to_existing_page: "pending_review",
+  add_section_to_existing_page: "pending_review",
+  merge_with_existing_cluster: "pending_review",
+  no_action: "rejected",
+  manual_review: "needs_more_data",
+};
+
+/** Generate content plan items for all clusters in status 'new'. Returns created count. */
+export async function generatePlan(): Promise<number> {
+  const config = await getScoringConfig();
+  const context = await loadContext();
+  const summary = summarizeContext(context);
+
+  const clusters = await run<ClusterRow>(
+    `SELECT id, cluster_name, main_intent, cluster_type, primary_keyword, total_frequency, region
+     FROM seo.keyword_clusters WHERE status = 'new'`,
+  );
+
+  let created = 0;
+  for (const cluster of clusters) {
+    const counts = await run<{ keyword_count: string; question_count: string }>(
+      `SELECT COUNT(*) AS keyword_count,
+              COUNT(*) FILTER (WHERE role = 'question') AS question_count
+       FROM seo.cluster_keywords WHERE cluster_id = $1`,
+      [cluster.id],
+    );
+    const keywordCount = Number(counts[0]?.keyword_count ?? 0);
+    const questionCount = Number(counts[0]?.question_count ?? 0);
+
+    const primaryKeyword = cluster.primary_keyword ?? cluster.cluster_name ?? "";
+    const gap = await analyzeGap(primaryKeyword, cluster.main_intent);
+    const matchedService = matchService(primaryKeyword, summary.services);
+
+    const input: ScoringInput = {
+      totalFrequency: cluster.total_frequency,
+      keywordCount,
+      questionCount,
+      intent: cluster.main_intent,
+      region: cluster.region,
+      serviceInContext: Boolean(matchedService),
+      serviceHasDescription: Boolean(matchedService?.description && matchedService.description.length > 30),
+      regionServed: !cluster.region || summary.regions.length === 0 || summary.regions.includes(cluster.region.toLowerCase()),
+      hasFaqData: summary.hasFaq,
+      hasCaseData: summary.hasCase,
+      hasAdvantageData: summary.hasAdvantage,
+      gap,
+    };
+
+    const { scores, signals } = score(input, config);
+    const passes = qualifies(scores, config);
+
+    // recommended action: gap drives it, but reject if it fails thresholds
+    let action: RecommendedAction = gap.recommended_action;
+    if (!passes && action !== "manual_review") action = "no_action";
+
+    const missingData: string[] = [];
+    if (!matchedService) missingData.push("Нет подтверждённой услуги в контексте компании");
+    if (!input.serviceHasDescription) missingData.push("Нет описания услуги");
+    if (!summary.hasFaq && (cluster.main_intent === "faq" || questionCount > 0)) missingData.push("Нет данных FAQ");
+
+    const status = passes ? ACTION_TO_STATUS[action] : "rejected";
+    const pageType = cluster.cluster_type ?? "article";
+    const proposedUrl = action === "create_new_page" ? `/${slugify(primaryKeyword)}/` : null;
+
+    const decisionLog = {
+      decision: action,
+      passes_thresholds: passes,
+      why: [
+        gap.reason,
+        input.serviceInContext ? "Связано с активной услугой" : "Услуга в контексте не найдена",
+        `Интент: ${cluster.main_intent ?? "unknown"}`,
+        `Суммарная частотность: ${cluster.total_frequency}`,
+      ],
+      scores,
+      signals,
+      gap,
+    };
+
+    // persist scores back to the cluster
+    await run(
+      `UPDATE seo.keyword_clusters SET
+         business_fit_score = $1, seo_opportunity_score = $2, content_readiness_score = $3,
+         risk_score = $4, content_priority_score = $5, recommended_action = $6,
+         target_existing_url = $7, proposed_url = $8, decision_log = $9,
+         status = $10, updated_at = NOW()
+       WHERE id = $11`,
+      [
+        scores.business_fit,
+        scores.seo_opportunity,
+        scores.content_readiness,
+        scores.risk,
+        scores.priority,
+        action,
+        gap.target_existing_url,
+        proposedUrl,
+        JSON.stringify(decisionLog),
+        passes ? "candidate" : "rejected",
+        cluster.id,
+      ],
+    );
+
+    await run(
+      `INSERT INTO seo.content_plan_items
+        (cluster_id, page_type, recommended_action, status, priority, confidence_score, risk_score,
+         reason, missing_data, proposed_title, proposed_url, target_existing_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (cluster_id) DO UPDATE SET
+         page_type = EXCLUDED.page_type,
+         recommended_action = EXCLUDED.recommended_action,
+         status = EXCLUDED.status,
+         priority = EXCLUDED.priority,
+         confidence_score = EXCLUDED.confidence_score,
+         risk_score = EXCLUDED.risk_score,
+         reason = EXCLUDED.reason,
+         missing_data = EXCLUDED.missing_data,
+         proposed_title = EXCLUDED.proposed_title,
+         proposed_url = EXCLUDED.proposed_url,
+         target_existing_url = EXCLUDED.target_existing_url,
+         updated_at = NOW()`,
+      [
+        cluster.id,
+        pageType,
+        action,
+        status,
+        scores.priority,
+        Math.min(99, scores.business_fit),
+        scores.risk,
+        gap.reason,
+        JSON.stringify(missingData),
+        cluster.cluster_name ?? primaryKeyword,
+        proposedUrl,
+        gap.target_existing_url,
+      ],
+    );
+    created += 1;
+  }
+  return created;
+}

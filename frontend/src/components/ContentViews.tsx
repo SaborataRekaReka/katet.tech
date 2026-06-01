@@ -73,7 +73,7 @@ type DetailSpecEntry = {
 function normalizeSpecToken(value: string) {
   return value
     .toLocaleLowerCase("ru-RU")
-    .replaceAll("ё", "е")
+    .replace(/ё/g, "е")
     .replace(/[ъь]/giu, "")
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }

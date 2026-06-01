@@ -1043,6 +1043,7 @@ export async function getCategoryPage(slug: string) {
         ), '[]'::json) AS categories
       FROM posts p
       INNER JOIN posts_categories rel ON rel.post_id = p.id
+      LEFT JOIN directus_files f ON f.id = p.featured_file_id
       WHERE p.status = 'publish' AND rel.category_id = $1::bigint
       ORDER BY p.wp_created_at DESC NULLS LAST, p.id DESC
     `,

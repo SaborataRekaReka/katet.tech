@@ -45,13 +45,13 @@ const filterParam = (key: string) => `filter_${key}`;
 function normalizeFilterValue(value: string) {
   return value
     .toLocaleLowerCase("ru-RU")
-    .replaceAll("ё", "е")
-    .replaceAll("x", "х")
+    .replace(/ё/g, "е")
+    .replace(/x/g, "х")
     .replace(/м\s*[. ]?\s*куб|м³|м3/gi, "мкуб")
     .replace(/тонн(?:ы|а)?\b/gi, "т")
     .replace(/\bт\./gi, "т")
     .replace(/[^\p{L}\p{N},]+/gu, "")
-    .replaceAll(",", "");
+    .replace(/,/g, "");
 }
 
 function specMatches(specValue: string, option: string) {

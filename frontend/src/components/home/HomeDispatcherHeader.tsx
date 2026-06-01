@@ -370,7 +370,7 @@ function buildServiceMegaColumns(workTypes?: WorkTypeNavLink[]) {
 function normalizeCityName(value: string) {
   return value
     .toLocaleLowerCase("ru-RU")
-    .replaceAll("ё", "е")
+    .replace(/ё/g, "е")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zа-я0-9]+/giu, " ")
@@ -592,9 +592,17 @@ export function HomeDispatcherHeader({ workTypes }: { workTypes?: WorkTypeNavLin
       };
     }
 
+    const cityAbortController = new AbortController();
+    const cityAbortTimer = window.setTimeout(() => {
+      cityAbortController.abort();
+    }, 1800);
+
     async function resolveAutoCity() {
       try {
-        const response = await fetch("/api/location/city", { cache: "no-store" });
+        const response = await fetch("/api/location/city/", {
+          cache: "no-store",
+          signal: cityAbortController.signal,
+        });
         if (!response.ok) throw new Error("City API request failed");
         const payload = (await response.json()) as { city?: string | null };
         if (isCancelled) return;
@@ -604,6 +612,8 @@ export function HomeDispatcherHeader({ workTypes }: { workTypes?: WorkTypeNavLin
       } catch {
         if (isCancelled) return;
         setCityState({ city: DEFAULT_CITY, source: "auto" });
+      } finally {
+        window.clearTimeout(cityAbortTimer);
       }
     }
 
@@ -611,6 +621,8 @@ export function HomeDispatcherHeader({ workTypes }: { workTypes?: WorkTypeNavLin
 
     return () => {
       isCancelled = true;
+      window.clearTimeout(cityAbortTimer);
+      cityAbortController.abort();
     };
   }, []);
 

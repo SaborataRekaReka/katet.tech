@@ -1,0 +1,269 @@
+.shell {
+  min-height: 100vh;
+  background: #f5f6f8;
+  color: #1b1f24;
+  font-family: var(--font-body, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 28px;
+  background: #11171f;
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+}
+
+.navLink {
+  color: #c7ced8;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.navLink:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.container {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.muted {
+  color: #66707c;
+  font-size: 14px;
+  margin: 0 0 24px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.stat {
+  background: #fff;
+  border: 1px solid #e6e9ee;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.statNum {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.statLabel {
+  font-size: 13px;
+  color: #66707c;
+  margin-top: 2px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e6e9ee;
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.cardTitle {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid #d4d9e0;
+  background: #fff;
+  color: #1b1f24;
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.btn:hover {
+  background: #f1f3f6;
+}
+
+.btnPrimary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  background: #1d4ed8;
+}
+
+.btnDanger {
+  border-color: #e3b1b1;
+  color: #b42318;
+}
+
+.btnDanger:hover {
+  background: #fdf1f0;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.input,
+.select,
+.textarea {
+  border: 1px solid #d4d9e0;
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+  color: #1b1f24;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+}
+
+.input {
+  min-width: 220px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eceff3;
+  vertical-align: top;
+}
+
+.table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #8a94a0;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eef1f5;
+  color: #495260;
+}
+
+.badgeGreen { background: #e7f6ec; color: #1a7f37; }
+.badgeBlue { background: #e7effd; color: #1d4ed8; }
+.badgeAmber { background: #fdf3e2; color: #b45309; }
+.badgeRed { background: #fdeceb; color: #b42318; }
+.badgeGray { background: #eef1f5; color: #66707c; }
+
+.progressOuter {
+  height: 10px;
+  background: #e6e9ee;
+  border-radius: 999px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 200px;
+}
+
+.progressInner {
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.3s;
+}
+
+.loginWrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #11171f;
+}
+
+.loginCard {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  width: 360px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.formCol {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.link {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.error {
+  color: #b42318;
+  font-size: 13px;
+}
+
+.smallMuted {
+  font-size: 12px;
+  color: #8a94a0;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #495260;
+  margin-bottom: 4px;
+}

@@ -186,7 +186,7 @@ function sectionSummary(html: string) {
 function sectionId(title: string, index: number) {
   const slug = title
     .toLocaleLowerCase("ru-RU")
-    .replaceAll("ё", "е")
+    .replace(/ё/g, "е")
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
 
@@ -196,7 +196,7 @@ function sectionId(title: string, index: number) {
 function normalizeComparableText(value: string) {
   return value
     .toLocaleLowerCase("ru-RU")
-    .replaceAll("ё", "е")
+    .replace(/ё/g, "е")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }

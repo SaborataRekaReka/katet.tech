@@ -1,68 +1,52 @@
-import Link from "next/link";
-import { getDashboardStats } from "@/lib/seo/queries";
-import { llmEnabled } from "@/lib/seo/openai";
-import { RunPanel } from "./RunPanel";
+import { getAdminQueriesPage, getClusterTargets } from "@/lib/seo/queries";
+import { QueriesActions } from "./QueriesActions";
 import styles from "./seo-admin.module.css";
+import { QueriesTableManager } from "./QueriesTableManager";
 
 export const dynamic = "force-dynamic";
 
-export default async function SeoDashboardPage() {
-  const stats = await getDashboardStats();
-  const aiOn = llmEnabled;
+type SearchParams = {
+  q?: string;
+  page?: string;
+  pageSize?: string;
+};
 
-  const cards: { label: string; value: number }[] = [
-    { label: "Контекст компании", value: stats.context },
-    { label: "Сид-запросы", value: stats.seeds },
-    { label: "Собрано фраз", value: stats.rawKeywords },
-    { label: "После очистки", value: stats.normalized },
-    { label: "Кластеры", value: stats.clusters },
-    { label: "На проверке", value: stats.planPending },
-    { label: "Черновики", value: stats.drafts },
-    { label: "Опубликовано", value: stats.published },
-  ];
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.trunc(value));
+}
+
+export default async function QueriesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const params = await searchParams;
+  const q = (params.q ?? "").trim();
+  const page = parsePositiveInt(params.page, 1);
+  const pageSize = Math.min(300, parsePositiveInt(params.pageSize, 100));
+
+  const [queriesPage, clusterTargets] = await Promise.all([
+    getAdminQueriesPage({ q, page, pageSize }),
+    getClusterTargets(500),
+  ]);
 
   return (
     <div>
-      <h1 className={styles.h1}>Дашборд</h1>
-      <p className={styles.muted}>
-        Автоматический конвейер SEO-материалов: сбор запросов → кластеризация → контент-план → черновики статей.
-      </p>
-
-      {!aiOn && (
-        <div className={`${styles.card}`} style={{ borderColor: "#f3d99b", background: "#fffaf0" }}>
-          <strong>OPENAI_API_KEY не задан.</strong> Конвейер работает на правилах и заглушках: кластеризация,
-          скоринг и черновики формируются эвристически. Для качественной генерации добавьте ключ в окружение.
+      <div className={styles.pageHead}>
+        <div>
+          <h1 className={styles.h1}>Запросы</h1>
+          <p className={styles.muted}>Общий пул запросов (сначала последние импортированные). Импортируйте таблицу и запустите кластеризацию.</p>
         </div>
-      )}
-
-      <div className={styles.grid}>
-        {cards.map((c) => (
-          <div key={c.label} className={styles.stat}>
-            <div className={styles.statNum}>{c.value}</div>
-            <div className={styles.statLabel}>{c.label}</div>
-          </div>
-        ))}
+        <QueriesActions />
       </div>
 
-      <RunPanel lastJob={stats.lastJob} hasContext={stats.context > 0} />
-
-      <div className={styles.card}>
-        <h2 className={styles.cardTitle}>Что дальше</h2>
-        <div className={styles.formCol}>
-          <span>
-            1. Проверьте <Link className={styles.link} href="/admin/seo/context">контекст компании</Link> — на нём строятся все запросы.
-          </span>
-          <span>
-            2. Нажмите «Начать генерацию» — конвейер соберёт фразы, разложит по кластерам и предложит план.
-          </span>
-          <span>
-            3. Откройте <Link className={styles.link} href="/admin/seo/plan">контент-план</Link>, проверьте предложения и сгенерируйте статьи.
-          </span>
-          <span>
-            4. В разделе <Link className={styles.link} href="/admin/seo/articles">статьи</Link> отредактируйте черновик и опубликуйте на сайт.
-          </span>
-        </div>
-      </div>
+      <QueriesTableManager
+        rows={queriesPage.items}
+        total={queriesPage.total}
+        page={queriesPage.page}
+        pageSize={queriesPage.pageSize}
+        totalPages={queriesPage.totalPages}
+        q={q}
+        clusterTargets={clusterTargets}
+      />
     </div>
   );
 }

@@ -27,6 +27,11 @@ async function insertRawRows(seedTerm: string, rows: WordstatRow[]): Promise<num
 /** Collect demand for all active seeds. Returns total raw keywords stored. */
 export async function collectAll(onProgress?: (done: number, total: number) => void): Promise<number> {
   const config = await getWordstatConfig();
+  if (config.mode === "csv") {
+    // CSV mode is manual: collection comes from /api/seo/keywords/import.
+    return 0;
+  }
+
   const seeds = await run<SeedRow>(
     `SELECT id, seed_term, region FROM seo.seed_terms WHERE status = 'active' ORDER BY priority, id`,
   );

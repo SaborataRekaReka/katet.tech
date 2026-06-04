@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   images: {
     dangerouslyAllowLocalIP: true,
-    qualities: [75, 90, 95, 100],
+    qualities: [65, 75, 90, 95, 100],
     localPatterns: [
       {
         pathname: "/assets/**",

@@ -175,8 +175,14 @@ export type ScoringConfig = {
 };
 
 export type WordstatConfig = {
-  mode: "mock" | "api" | "csv";
+  mode: "api" | "csv";
   regions: string[];
   min_frequency: number;
   max_keywords_per_seed: number;
+};
+
+export type SemanticsCleaningConfig = {
+  min_frequency: number;
+  require_business_fit: boolean;
+  junk_words: string[];
 };

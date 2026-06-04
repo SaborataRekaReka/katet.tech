@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { isAdmin } from "@/lib/seo/auth";
 import { LoginForm } from "./LoginForm";
+import { AdminNav } from "./AdminNav";
 import styles from "./seo-admin.module.css";
 
 export const dynamic = "force-dynamic";
@@ -29,12 +29,7 @@ export default async function SeoAdminLayout({ children }: { children: ReactNode
     <div className={styles.shell}>
       <header className={styles.topbar}>
         <span className={styles.brand}>SEO-конвейер</span>
-        <nav className={styles.nav}>
-          <Link className={styles.navLink} href="/admin/seo">Дашборд</Link>
-          <Link className={styles.navLink} href="/admin/seo/plan">Контент-план</Link>
-          <Link className={styles.navLink} href="/admin/seo/articles">Статьи</Link>
-          <Link className={styles.navLink} href="/admin/seo/context">Контекст</Link>
-        </nav>
+        <AdminNav />
       </header>
       <main className={styles.container}>{children}</main>
     </div>

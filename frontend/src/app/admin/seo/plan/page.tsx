@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 const FILTERS: { key: string; label: string }[] = [
   { key: "pending_review", label: "На проверке" },
   { key: "ready_for_brief", label: "Одобрено" },
+  { key: "content_generated", label: "Закрыто" },
   { key: "rejected", label: "Отклонено" },
   { key: "all", label: "Все" },
 ];

@@ -2691,6 +2691,13 @@ body:not(:has(.home-page)) .hero__description {
 }
 
 @media (max-width: 1025px) {
+  .archive-landing.global-catalog-landing.equipment-detail-template .hero--main-analog .hero__inner {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding-top: 24px;
+    padding-bottom: 36px;
+  }
+
   .equipment-detail-template__top {
     grid-template-columns: 1fr;
   }

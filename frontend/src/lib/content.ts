@@ -1125,7 +1125,7 @@ export async function getSitemapPaths() {
   ];
 
   const categoriesUnion = withCategories
-    ? "UNION ALL SELECT url_path, migrated_at::text FROM categories WHERE url_path IS NOT NULL"
+    ? "UNION ALL SELECT url_path, updated_at::text FROM categories WHERE url_path IS NOT NULL"
     : "";
 
   const paths = await query<{ url_path: string; updated_at: string | null }>(

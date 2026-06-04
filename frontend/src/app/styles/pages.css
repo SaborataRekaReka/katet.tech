@@ -4317,8 +4317,8 @@
   }
 
   .seo-enhanced__toc {
-    position: sticky;
-    top: 88px;
+    position: static;
+    top: auto;
   }
 }
 

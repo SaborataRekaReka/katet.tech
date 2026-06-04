@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import styles from "./seo-admin.module.css";
+
+type JobLogEntry = {
+  at: string;
+  step: string;
+  message: string;
+};
 
 type Job = {
   id: number;
@@ -13,6 +20,7 @@ type Job = {
   total: number;
   error: string | null;
   started_at: string;
+  log?: JobLogEntry[];
 } | null;
 
 const STEP_LABELS: Record<string, string> = {
@@ -77,6 +85,10 @@ export function RunPanel({ lastJob, hasContext }: { lastJob: Job; hasContext: bo
   }
 
   const pct = job && job.total > 0 ? Math.round((job.progress / job.total) * 100) : running ? 5 : 0;
+  const latestMessage = job?.log
+    ?.slice()
+    .reverse()
+    .find((entry) => entry.message !== "Готово")?.message;
 
   return (
     <div className={styles.card}>
@@ -128,6 +140,12 @@ export function RunPanel({ lastJob, hasContext }: { lastJob: Job; hasContext: bo
             </div>
             <span className={styles.smallMuted}>{pct}%</span>
           </div>
+          {latestMessage && <p className={styles.smallMuted}>{latestMessage}</p>}
+          {job.status === "done" && (
+            <p className={styles.smallMuted}>
+              Черновики находятся в разделе <Link className={styles.link} href="/admin/seo/articles">Статьи</Link>.
+            </p>
+          )}
           {job.error && <p className={styles.error}>Ошибка: {job.error}</p>}
         </div>
       )}

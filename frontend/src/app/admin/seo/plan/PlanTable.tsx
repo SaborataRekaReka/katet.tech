@@ -9,6 +9,10 @@ const STATUS_BADGE: Record<string, string> = {
   pending_review: styles.badgeAmber,
   ready_for_brief: styles.badgeBlue,
   approved: styles.badgeBlue,
+  brief_created: styles.badgeBlue,
+  in_content_generation: styles.badgeGreen,
+  content_generated: styles.badgeGreen,
+  published: styles.badgeGreen,
   rejected: styles.badgeRed,
   needs_more_data: styles.badgeGray,
 };
@@ -17,6 +21,10 @@ const STATUS_LABEL: Record<string, string> = {
   pending_review: "На проверке",
   ready_for_brief: "Одобрено",
   approved: "Одобрено",
+  brief_created: "ТЗ создано",
+  in_content_generation: "Контент закрыт",
+  content_generated: "Контент закрыт",
+  published: "Опубликовано",
   rejected: "Отклонено",
   needs_more_data: "Нужны данные",
 };

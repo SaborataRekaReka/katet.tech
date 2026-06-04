@@ -7,7 +7,7 @@ Next.js-приложения (`frontend/`). Один деплой, без отд
 
 1. **Контекст компании** — услуги, техника, задачи, регионы, преимущества, запретные темы.
 2. **Сид-запросы** — генерируются из контекста.
-3. **Сбор частотности** — Wordstat (mock / official API / CSV-импорт).
+3. **Сбор частотности** — Wordstat (official API / CSV-импорт).
 4. **Очистка и нормализация** — лемматизация, классификация интента, фильтр релевантности.
 5. **Кластеризация** — группировка по интенту/сущности/региону + (опц.) LLM-нейминг.
 6. **Site-gap анализ** — сверка с существующими страницами (новая / обновить / каннибализация).
@@ -32,8 +32,21 @@ OPENAI_MODEL_CHEAP=gpt-4o-mini   # опц.
 OPENAI_MODEL_STRONG=gpt-4o       # опц.
 OPENAI_MODEL_EMBEDDING=text-embedding-3-small  # опц.
 SEO_ADMIN_TOKEN=...              # токен доступа к /admin/seo (без него доступ только в dev)
-WORDSTAT_API_TOKEN=...           # опц., для режима api
+WORDSTAT_API_PROVIDER=legacy     # legacy | cloud
+
+# Legacy Wordstat endpoint (passport OAuth)
+WORDSTAT_API_TOKEN=...           # опц.
+WORDSTAT_CLIENT_ID=...           # опц., если используете refresh_token поток
+WORDSTAT_CLIENT_SECRET=...       # опц.
+WORDSTAT_REFRESH_TOKEN=...       # опц.
 WORDSTAT_API_URL=...             # опц.
+
+# Yandex Search API Cloud (рекомендуемый путь)
+WORDSTAT_CLOUD_API_KEY=...       # предпочтительно
+WORDSTAT_CLOUD_IAM_TOKEN=...     # альтернатива
+WORDSTAT_CLOUD_FOLDER_ID=...     # обязателен для cloud-провайдера
+WORDSTAT_CLOUD_ENDPOINT=https://searchapi.api.cloud.yandex.net/v2/wordstat/topRequests
+WORDSTAT_CLOUD_REGION_IDS=213,1  # опц.
 ```
 
 ## Запуск
@@ -54,6 +67,18 @@ WORDSTAT_API_URL=...             # опц.
    ```
 4. Открыть `http://localhost:3000/admin/seo`, заполнить контекст (есть пресет «Катет»),
    нажать «Начать генерацию», проверить план, сгенерировать и опубликовать статьи.
+
+## CSV-first workflow без платного Wordstat API
+
+1. Открыть `/admin/seo/semantics`.
+2. Загрузить CSV/TSV/TXT выгрузку Wordstat или вставить строки вида `фраза;частотность`.
+3. Нажать «Импортировать».
+4. Нажать «Обработать семантику» — система выполнит очистку, кластеризацию и сформирует контент-план без внешнего API.
+5. Проверить блок «Кластеры и покрытие».
+6. Указать количество статей и нажать «Сгенерировать статьи».
+
+Система сама выбирает лучшие незакрытые темы по приоритету. После создания черновика план получает
+статус `content_generated`, а в интерфейсе кластер помечается как «контент закрыт».
 
 ## Отклонения от ТЗ (согласованы)
 

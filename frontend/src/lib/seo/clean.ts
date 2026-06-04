@@ -1,7 +1,7 @@
 import "server-only";
 
 import { run } from "./db";
-import type { CompanyContext, Intent } from "./types";
+import type { CompanyContext, Intent, SemanticsCleaningConfig } from "./types";
 import { loadContext } from "./seed";
 
 /**
@@ -19,7 +19,130 @@ const COMMERCIAL_WORDS = ["аренда", "арендовать", "заказа�
 const COMPARISON_WORDS = ["лучше", "сравнение", "или", "vs", "против", "отличие", "разница"];
 const QUESTION_WORDS = ["как", "что", "почему", "зачем", "когда", "какой", "какая", "какие", "нужно", "нужен", "можно ли"];
 const SELECTION_WORDS = ["выбрать", "выбор", "подобрать", "какой нужен"];
-const JUNK_WORDS = ["бесплатно", "скачать", "торрент", "вакансия", "работа", "обучение", "своими руками", "бу", "купить"];
+const BUSINESS_FIT_WORDS = [
+  ...PRICE_WORDS,
+  ...COMMERCIAL_WORDS,
+  "аренд",
+  "услуг",
+  "заказ",
+  "с экипаж",
+  "экипаж",
+  "нужн",
+  "москва",
+  "московск",
+];
+const GENERIC_SERVICE_TOKENS = new Set(["спецтехник", "техник"]);
+const ENTITY_ACTION_TOKENS = new Set(["аренд", "услуг"]);
+const JUNK_TOKEN_WORDS = ["дром", "авито"];
+const BASE_JUNK_WORDS = [
+  "бесплатно",
+  "скачать",
+  "торрент",
+  "вакансия",
+  "работа",
+  "обучение",
+  "своими руками",
+  "бу",
+  "купить",
+  "куплю",
+  "купл",
+  "продажа",
+  "продать",
+  "продам",
+  "ремонт",
+  "запчаст",
+  "запасные части",
+  "сервис",
+  "оквэд",
+  "учет",
+  "учёт",
+  "гостехнадзор",
+  "регистрация",
+  "документ",
+  "удостоверение",
+  "права на",
+  "мультик",
+  "мультики",
+  "для детей",
+  "игрушк",
+  "картинк",
+  "фото",
+  "звук",
+  "раскраск",
+  "работ",
+  "водител",
+  "машинист",
+  "ооо",
+  "ип ",
+  "завод",
+  "магазин",
+  "производство",
+  "аукцион",
+  "торги",
+  "выставк",
+  "китай",
+  "шины",
+  "резина",
+  "путевой",
+  "рапорт",
+  "номер",
+  "ключ",
+  "эфко",
+  "официальный сайт",
+  "сайт",
+  "договор",
+  "образец",
+  "шаблон",
+  "бланк",
+  "акт ",
+  "окпд",
+  "косгу",
+  "эсм",
+  "патент",
+  "коммерческое предложение",
+  "самозанят",
+  "диспетчер",
+  "менеджер",
+  "арендатор",
+  "субаренда",
+  "сдать в аренду",
+  "сдача в аренду",
+  "счет",
+  "счёт",
+  "код услуги",
+  "код аренды",
+  "лизинг",
+  "трал",
+  "перевозк",
+  "доставка спецтехники",
+  "рынок аренды",
+  "бизнес на аренде",
+  "объявлен",
+  "заявк",
+  "спб",
+  "санкт",
+  "петербург",
+  "нижний новгород",
+  "нижний",
+  "новгород",
+  "новосибирск",
+  "челябинск",
+  "казан",
+  "самар",
+  "саратов",
+  "ростов",
+  "воронеж",
+  "волгоград",
+  "омск",
+  "уфа",
+  "тюмень",
+  "ярослав",
+  "рязань",
+  "улан",
+  "удэ",
+  "рубцовск",
+  "слово",
+];
 
 function lemmatizeToken(token: string): string {
   // Lightweight Russian stemmer: strips common inflectional endings.
@@ -41,7 +164,7 @@ export function normalize(keyword: string): { normalized: string; tokens: string
 }
 
 type ContextIndex = {
-  services: { id: number; name: string; tokens: string[] }[];
+  services: { id: number; name: string; tokens: string[]; contextType: string }[];
   tasks: { id: number; name: string; tokens: string[] }[];
   regions: string[];
   forbidden: string[];
@@ -53,7 +176,7 @@ function buildContextIndex(context: CompanyContext[]): ContextIndex {
   return {
     services: context
       .filter((c) => c.context_type === "service" || c.context_type === "service_category" || c.context_type === "equipment_type")
-      .map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name) })),
+      .map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name), contextType: c.context_type })),
     tasks: context.filter((c) => c.context_type === "task").map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name) })),
     regions: context.filter((c) => c.context_type === "region").map((c) => c.name.toLowerCase()),
     forbidden: context.filter((c) => c.context_type === "forbidden_topic").map((c) => c.name.toLowerCase()),
@@ -65,13 +188,55 @@ function hasAny(text: string, words: string[]): boolean {
   return words.some((w) => text.includes(w));
 }
 
-function matchEntities(lemmas: string[], entities: { name: string; tokens: string[] }[]): string[] {
+function hasTokenWord(text: string, word: string): boolean {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|\\s)${escaped}(\\s|$)`, "u").test(text);
+}
+
+function hasJunk(text: string, junkWords: string[]): boolean {
+  if (hasAny(text, junkWords)) return true;
+  return JUNK_TOKEN_WORDS.some((word) => hasTokenWord(text, word));
+}
+
+function hasBusinessFit(text: string): boolean {
+  return hasAny(text, BUSINESS_FIT_WORDS);
+}
+
+function tokenOverlap(lemmas: string[], tokens: string[]): number {
   const set = new Set(lemmas);
+  return tokens.filter((token) => set.has(token)).length;
+}
+
+function matchServices(lemmas: string[], entities: ContextIndex["services"], businessFit: boolean): string[] {
   const matched: string[] = [];
   for (const entity of entities) {
     if (entity.tokens.length === 0) continue;
-    const overlap = entity.tokens.filter((t) => set.has(t)).length;
-    if (overlap >= Math.max(1, Math.ceil(entity.tokens.length / 2))) matched.push(entity.name);
+    const coreTokens = entity.tokens.filter((token) => !ENTITY_ACTION_TOKENS.has(token));
+    const overlap = tokenOverlap(lemmas, coreTokens);
+    if (overlap === 0) continue;
+
+    const genericOnly = coreTokens.every((token) => GENERIC_SERVICE_TOKENS.has(token));
+    if (genericOnly) {
+      if (businessFit && overlap === coreTokens.length) matched.push(entity.name);
+      continue;
+    }
+
+    if (entity.contextType === "equipment_type") {
+      if (overlap >= Math.max(1, Math.ceil(coreTokens.length * 0.7))) matched.push(entity.name);
+      continue;
+    }
+
+    if (businessFit && overlap >= Math.max(1, Math.ceil(coreTokens.length * 0.75))) matched.push(entity.name);
+  }
+  return matched;
+}
+
+function matchTasks(lemmas: string[], entities: { name: string; tokens: string[] }[]): string[] {
+  const matched: string[] = [];
+  for (const entity of entities) {
+    if (entity.tokens.length === 0) continue;
+    const overlap = tokenOverlap(lemmas, entity.tokens);
+    if (overlap >= Math.min(entity.tokens.length, 2)) matched.push(entity.name);
   }
   return matched;
 }
@@ -90,7 +255,13 @@ export type ClassifiedKeyword = {
   irrelevance_reason: string;
 };
 
-export function classify(keyword: string, index: ContextIndex, minFrequency: number, frequency: number): ClassifiedKeyword {
+type CleaningRules = {
+  min_frequency: number;
+  require_business_fit: boolean;
+  junk_words: string[];
+};
+
+export function classify(keyword: string, index: ContextIndex, rules: CleaningRules, frequency: number): ClassifiedKeyword {
   const { normalized, tokens, lemmas } = normalize(keyword);
   const text = keyword.toLowerCase();
   const modifiers: string[] = [];
@@ -101,8 +272,9 @@ export function classify(keyword: string, index: ContextIndex, minFrequency: num
   if (hasAny(text, SELECTION_WORDS)) modifiers.push("selection");
 
   const detected_geo = index.regions.filter((r) => text.includes(r));
-  const detected_service = matchEntities(lemmas, index.services);
-  const detected_task = matchEntities(lemmas, index.tasks);
+  const businessFit = rules.require_business_fit ? hasBusinessFit(text) : true;
+  const detected_service = matchServices(lemmas, index.services, businessFit || detected_geo.length > 0);
+  const detected_task = matchTasks(lemmas, index.tasks);
 
   // ---- relevance filters (Task.md §10.2) ----
   let is_relevant = true;
@@ -110,13 +282,18 @@ export function classify(keyword: string, index: ContextIndex, minFrequency: num
   if (hasAny(text, index.forbidden)) {
     is_relevant = false;
     irrelevance_reason = "forbidden";
-  } else if (hasAny(text, JUNK_WORDS)) {
+  } else if (hasJunk(text, rules.junk_words)) {
     is_relevant = false;
     irrelevance_reason = "not_business_fit";
-  } else if (frequency < minFrequency) {
+  } else if (frequency < rules.min_frequency) {
     is_relevant = false;
     irrelevance_reason = "too_narrow";
-  } else if (detected_service.length === 0 && detected_task.length === 0 && index.services.length > 0) {
+  } else if (
+    rules.require_business_fit
+    && detected_service.length === 0
+    && detected_task.length === 0
+    && index.services.length > 0
+  ) {
     is_relevant = false;
     irrelevance_reason = "not_business_fit";
   }
@@ -170,23 +347,42 @@ export function classify(keyword: string, index: ContextIndex, minFrequency: num
 
 type RawRow = { id: number; keyword: string; frequency: number | null; region: string | null };
 
+type CleanOptions = {
+  reprocess?: boolean;
+  cleaning?: Partial<SemanticsCleaningConfig>;
+};
+
+function normalizeCustomJunkWords(words: string[] | undefined): string[] {
+  if (!Array.isArray(words)) return [];
+  return words.map((word) => String(word).trim().toLowerCase()).filter((word) => word.length > 0);
+}
+
 /**
  * Process all raw keywords that don't yet have a normalized row.
  * De-duplicates by normalized_keyword + region (keeps max frequency).
  */
-export async function cleanAndNormalize(minFrequency: number): Promise<number> {
+export async function cleanAndNormalize(minFrequency: number, options: CleanOptions = {}): Promise<number> {
   const context = await loadContext();
   const index = buildContextIndex(context);
+  const reprocess = Boolean(options.reprocess);
+  const customJunkWords = normalizeCustomJunkWords(options.cleaning?.junk_words);
+  const rules: CleaningRules = {
+    min_frequency: Math.max(1, Number(options.cleaning?.min_frequency ?? minFrequency) || minFrequency),
+    require_business_fit: options.cleaning?.require_business_fit ?? true,
+    junk_words: [...BASE_JUNK_WORDS, ...customJunkWords],
+  };
   const rawRows = await run<RawRow>(
     `SELECT r.id, r.keyword, r.frequency, r.region
      FROM seo.raw_keywords r
-     WHERE NOT EXISTS (SELECT 1 FROM seo.normalized_keywords n WHERE n.raw_keyword_id = r.id)`,
+     WHERE $1::boolean = TRUE
+        OR NOT EXISTS (SELECT 1 FROM seo.normalized_keywords n WHERE n.raw_keyword_id = r.id)`,
+    [reprocess],
   );
 
   let processed = 0;
   for (const raw of rawRows) {
     const frequency = raw.frequency ?? 0;
-    const c = classify(raw.keyword, index, minFrequency, frequency);
+    const c = classify(raw.keyword, index, rules, frequency);
     const status = c.is_relevant ? "classified" : "excluded";
     await run(
       `INSERT INTO seo.normalized_keywords
@@ -195,7 +391,19 @@ export async function cleanAndNormalize(minFrequency: number): Promise<number> {
          is_relevant, irrelevance_reason, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (normalized_keyword, COALESCE(region, '')) DO UPDATE
-         SET frequency = GREATEST(seo.normalized_keywords.frequency, EXCLUDED.frequency)`,
+         SET frequency = GREATEST(seo.normalized_keywords.frequency, EXCLUDED.frequency),
+             tokens = CASE WHEN $17::boolean THEN EXCLUDED.tokens ELSE seo.normalized_keywords.tokens END,
+             lemmas = CASE WHEN $17::boolean THEN EXCLUDED.lemmas ELSE seo.normalized_keywords.lemmas END,
+             modifiers = CASE WHEN $17::boolean THEN EXCLUDED.modifiers ELSE seo.normalized_keywords.modifiers END,
+             detected_geo = CASE WHEN $17::boolean THEN EXCLUDED.detected_geo ELSE seo.normalized_keywords.detected_geo END,
+             detected_service = CASE WHEN $17::boolean THEN EXCLUDED.detected_service ELSE seo.normalized_keywords.detected_service END,
+             detected_task = CASE WHEN $17::boolean THEN EXCLUDED.detected_task ELSE seo.normalized_keywords.detected_task END,
+             detected_intent = CASE WHEN $17::boolean THEN EXCLUDED.detected_intent ELSE seo.normalized_keywords.detected_intent END,
+             intent_confidence = CASE WHEN $17::boolean THEN EXCLUDED.intent_confidence ELSE seo.normalized_keywords.intent_confidence END,
+             is_relevant = CASE WHEN $17::boolean THEN EXCLUDED.is_relevant ELSE seo.normalized_keywords.is_relevant END,
+             irrelevance_reason = CASE WHEN $17::boolean THEN EXCLUDED.irrelevance_reason ELSE seo.normalized_keywords.irrelevance_reason END,
+             status = CASE WHEN $17::boolean THEN EXCLUDED.status ELSE seo.normalized_keywords.status END,
+             cluster_id = CASE WHEN $17::boolean THEN NULL ELSE seo.normalized_keywords.cluster_id END`,
       [
         raw.id,
         raw.keyword,
@@ -213,6 +421,7 @@ export async function cleanAndNormalize(minFrequency: number): Promise<number> {
         c.is_relevant,
         c.irrelevance_reason,
         status,
+        reprocess,
       ],
     );
     processed += 1;

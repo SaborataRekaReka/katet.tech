@@ -1,7 +1,9 @@
 import "server-only";
 
+import fs from "node:fs";
+import path from "node:path";
 import { one, run } from "./db";
-import { chatJson, MODELS } from "./openai";
+import { chatJson, generateImage, MODELS } from "./openai";
 import type { ContentBrief, GeneratedArticle } from "./types";
 
 /**
@@ -65,6 +67,165 @@ function fallbackArticle(brief: ContentBrief): GeneratedArticle {
 
 type PlanRow = { id: number; cluster_id: number };
 
+type ImagePlacementPlan = {
+  anchor_h2?: string;
+  prompt: string;
+  alt?: string;
+};
+
+type ImagePlanResponse = {
+  placements?: ImagePlacementPlan[];
+};
+
+type InsertedImage = {
+  html: string;
+  anchor_h2?: string;
+};
+
+function resolvePublicDir(): string {
+  const candidates = [path.join(process.cwd(), "public"), path.join(process.cwd(), "frontend", "public")];
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  return found ?? candidates[0];
+}
+
+function imageExtByMime(mimeType: string): string {
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
+  return "png";
+}
+
+function extractHeadings(bodyHtml: string): string[] {
+  const matches = [...bodyHtml.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)];
+  return matches
+    .map((match) => asText(match[1]).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function paragraphCount(bodyHtml: string): number {
+  return (bodyHtml.match(/<p\b/gi) || []).length;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function insertImagesByAnchors(bodyHtml: string, images: InsertedImage[]): { html: string; rest: InsertedImage[] } {
+  let html = bodyHtml;
+  const rest: InsertedImage[] = [];
+  for (const image of images) {
+    const anchor = (image.anchor_h2 || "").trim();
+    if (!anchor) {
+      rest.push(image);
+      continue;
+    }
+    const regex = new RegExp(`(<h2[^>]*>[^<]*${escapeRegExp(anchor)}[^<]*<\\/h2>)`, "i");
+    if (!regex.test(html)) {
+      rest.push(image);
+      continue;
+    }
+    html = html.replace(regex, `$1\n${image.html}`);
+  }
+  return { html, rest };
+}
+
+function insertImagesEveryThreeParagraphs(bodyHtml: string, images: InsertedImage[]): string {
+  if (images.length === 0) return bodyHtml;
+  const parts = bodyHtml.split(/(<\/p>)/i);
+  let paragraphIndex = 0;
+  let imageIndex = 0;
+  const out: string[] = [];
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    out.push(part);
+    if (!/^<\/p>$/i.test(part)) continue;
+    paragraphIndex += 1;
+    if (paragraphIndex % 3 !== 0) continue;
+    if (imageIndex >= images.length) continue;
+    out.push(`\n${images[imageIndex].html}\n`);
+    imageIndex += 1;
+  }
+
+  while (imageIndex < images.length) {
+    out.push(`\n${images[imageIndex].html}\n`);
+    imageIndex += 1;
+  }
+
+  return out.join("");
+}
+
+async function buildImagePlan(brief: ContentBrief, article: GeneratedArticle): Promise<ImagePlacementPlan[]> {
+  const headings = extractHeadings(article.body_html);
+  const paragraphTotal = paragraphCount(article.body_html);
+  const planned = Math.max(1, Math.min(4, Math.floor(paragraphTotal / 3)));
+  const llm = await chatJson<ImagePlanResponse>({
+    model: MODELS.cheap,
+    system:
+      "Ты редактор SEO-статьи. Верни JSON: { placements: [{ anchor_h2, prompt, alt }] }. " +
+      "Нужно 1-4 изображения по смысловым разделам статьи. prompt на русском, конкретный и безопасный. " +
+      "anchor_h2 должен быть одним из переданных заголовков H2 или пустым.",
+    user: JSON.stringify({
+      primary_keyword: brief.primary_keyword,
+      title: article.title,
+      headings,
+      desired_count: planned,
+    }),
+    temperature: 0.2,
+    maxTokens: 600,
+  });
+
+  const placements = Array.isArray(llm?.placements) ? llm!.placements : [];
+  const valid = placements
+    .map((item) => ({
+      anchor_h2: asText(item.anchor_h2),
+      prompt: asText(item.prompt),
+      alt: asText(item.alt),
+    }))
+    .filter((item) => item.prompt.length > 15)
+    .slice(0, planned);
+
+  if (valid.length > 0) return valid;
+
+  return headings.slice(0, planned).map((heading) => ({
+    anchor_h2: heading,
+    prompt: `Реалистичная строительная сцена по теме: ${heading}. Спецтехника в работе, дневной свет, без текста и логотипов.`,
+    alt: heading,
+  }));
+}
+
+async function generateAndInsertImages(article: GeneratedArticle, brief: ContentBrief): Promise<string> {
+  const plan = await buildImagePlan(brief, article);
+  if (plan.length === 0) return article.body_html;
+
+  const publicDir = resolvePublicDir();
+  const imageDir = path.join(publicDir, "assets", "seo-ai");
+  fs.mkdirSync(imageDir, { recursive: true });
+
+  const inserted: InsertedImage[] = [];
+  for (let index = 0; index < plan.length; index += 1) {
+    const item = plan[index];
+    const image = await generateImage(item.prompt, "1536x1024");
+    if (!image) continue;
+
+    const ext = imageExtByMime(image.mimeType);
+    const fileName = `${article.slug || "article"}-${Date.now()}-${index + 1}.${ext}`;
+    const filePath = path.join(imageDir, fileName);
+    fs.writeFileSync(filePath, image.bytes);
+
+    const relative = `/assets/seo-ai/${fileName}`;
+    const alt = escapeHtml(item.alt || item.anchor_h2 || article.title);
+    const figure =
+      `<figure class=\"seo-ai-image\">` +
+      `<img src=\"${relative}\" alt=\"${alt}\" loading=\"lazy\" decoding=\"async\" />` +
+      `</figure>`;
+    inserted.push({ html: figure, anchor_h2: item.anchor_h2 });
+  }
+
+  if (inserted.length === 0) return article.body_html;
+  const byAnchor = insertImagesByAnchors(article.body_html, inserted);
+  return insertImagesEveryThreeParagraphs(byAnchor.html, byAnchor.rest);
+}
+
 /** Generate and persist an article draft for a plan item with a ready brief. */
 export async function generateArticle(planItemId: number): Promise<number> {
   const briefRow = await one<{ id: number; brief: ContentBrief }>(
@@ -105,6 +266,8 @@ export async function generateArticle(planItemId: number): Promise<number> {
     };
   }
 
+  article.body_html = await generateAndInsertImages(article, brief);
+
   const urlPath = `/${article.slug || "stranica"}/`;
   const schema =
     article.faq.length > 0
@@ -139,7 +302,7 @@ export async function generateArticle(planItemId: number): Promise<number> {
     ],
   );
 
-  await run(`UPDATE seo.content_plan_items SET status = 'in_content_generation', updated_at = NOW() WHERE id = $1`, [
+  await run(`UPDATE seo.content_plan_items SET status = 'content_generated', updated_at = NOW() WHERE id = $1`, [
     planItemId,
   ]);
 

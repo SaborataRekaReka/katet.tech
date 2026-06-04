@@ -43,7 +43,7 @@ type ClusterRow = {
 };
 
 type ContextSummary = {
-  services: CompanyContext[];
+  businessTopics: CompanyContext[];
   hasFaq: boolean;
   hasCase: boolean;
   hasAdvantage: boolean;
@@ -52,8 +52,12 @@ type ContextSummary = {
 
 function summarizeContext(context: CompanyContext[]): ContextSummary {
   return {
-    services: context.filter(
-      (c) => c.context_type === "service" || c.context_type === "service_category" || c.context_type === "equipment_type",
+    businessTopics: context.filter(
+      (c) =>
+        c.context_type === "service" ||
+        c.context_type === "service_category" ||
+        c.context_type === "equipment_type" ||
+        c.context_type === "task",
     ),
     hasFaq: context.some((c) => c.context_type === "faq"),
     hasCase: context.some((c) => c.context_type === "case"),
@@ -62,18 +66,35 @@ function summarizeContext(context: CompanyContext[]): ContextSummary {
   };
 }
 
-function matchService(primaryKeyword: string, services: CompanyContext[]): CompanyContext | null {
+function normalizeWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .map((word) =>
+      word
+        .replace(/(ами|ями|ого|его|ому|ему|ыми|ими|ой|ей|ую|юю|ая|яя|ое|ее|ы|и|а|я|у|ю|е|ом|ем|ах|ях|ов|ев|ью)$/u, "")
+        .trim(),
+    )
+    .filter((word) => word.length > 2);
+}
+
+function matchBusinessTopic(primaryKeyword: string, topics: CompanyContext[]): CompanyContext | null {
   const text = primaryKeyword.toLowerCase();
-  let best: CompanyContext | null = null;
-  for (const service of services) {
-    const name = service.name.toLowerCase();
-    const head = name.split(" ")[0];
-    if (text.includes(name) || (head.length > 3 && text.includes(head))) {
-      best = service;
-      break;
+  const keywordTokens = new Set(normalizeWords(primaryKeyword));
+  let best: { topic: CompanyContext; score: number } | null = null;
+  for (const topic of topics) {
+    const name = topic.name.toLowerCase();
+    const topicTokens = normalizeWords(topic.name);
+    if (topicTokens.length === 0) continue;
+
+    const overlap = topicTokens.filter((token) => keywordTokens.has(token)).length;
+    const score = text.includes(name) ? topicTokens.length + 2 : overlap;
+    if (score >= Math.max(1, Math.ceil(topicTokens.length / 2)) && (!best || score > best.score)) {
+      best = { topic, score };
     }
   }
-  return best;
+  return best?.topic ?? null;
 }
 
 const ACTION_TO_STATUS: Record<RecommendedAction, string> = {
@@ -86,7 +107,7 @@ const ACTION_TO_STATUS: Record<RecommendedAction, string> = {
   manual_review: "needs_more_data",
 };
 
-/** Generate content plan items for all clusters in status 'new'. Returns created count. */
+/** Generate content plan items for clusters that can be recalculated. Returns upserted count. */
 export async function generatePlan(): Promise<number> {
   const config = await getScoringConfig();
   const context = await loadContext();
@@ -94,7 +115,7 @@ export async function generatePlan(): Promise<number> {
 
   const clusters = await run<ClusterRow>(
     `SELECT id, cluster_name, main_intent, cluster_type, primary_keyword, total_frequency, region
-     FROM seo.keyword_clusters WHERE status = 'new'`,
+      FROM seo.keyword_clusters WHERE status IN ('new', 'candidate', 'rejected')`,
   );
 
   let created = 0;
@@ -110,7 +131,7 @@ export async function generatePlan(): Promise<number> {
 
     const primaryKeyword = cluster.primary_keyword ?? cluster.cluster_name ?? "";
     const gap = await analyzeGap(primaryKeyword, cluster.main_intent);
-    const matchedService = matchService(primaryKeyword, summary.services);
+    const matchedBusinessTopic = matchBusinessTopic(primaryKeyword, summary.businessTopics);
 
     const input: ScoringInput = {
       totalFrequency: cluster.total_frequency,
@@ -118,8 +139,8 @@ export async function generatePlan(): Promise<number> {
       questionCount,
       intent: cluster.main_intent,
       region: cluster.region,
-      serviceInContext: Boolean(matchedService),
-      serviceHasDescription: Boolean(matchedService?.description && matchedService.description.length > 30),
+      serviceInContext: Boolean(matchedBusinessTopic),
+      serviceHasDescription: Boolean(matchedBusinessTopic?.description && matchedBusinessTopic.description.length > 30),
       regionServed: !cluster.region || summary.regions.length === 0 || summary.regions.includes(cluster.region.toLowerCase()),
       hasFaqData: summary.hasFaq,
       hasCaseData: summary.hasCase,
@@ -135,7 +156,7 @@ export async function generatePlan(): Promise<number> {
     if (!passes && action !== "manual_review") action = "no_action";
 
     const missingData: string[] = [];
-    if (!matchedService) missingData.push("Нет подтверждённой услуги в контексте компании");
+    if (!matchedBusinessTopic) missingData.push("Нет подтверждённой услуги или задачи в контексте компании");
     if (!input.serviceHasDescription) missingData.push("Нет описания услуги");
     if (!summary.hasFaq && (cluster.main_intent === "faq" || questionCount > 0)) missingData.push("Нет данных FAQ");
 
@@ -148,7 +169,7 @@ export async function generatePlan(): Promise<number> {
       passes_thresholds: passes,
       why: [
         gap.reason,
-        input.serviceInContext ? "Связано с активной услугой" : "Услуга в контексте не найдена",
+        input.serviceInContext ? "Связано с активной услугой или задачей" : "Услуга или задача в контексте не найдена",
         `Интент: ${cluster.main_intent ?? "unknown"}`,
         `Суммарная частотность: ${cluster.total_frequency}`,
       ],
@@ -188,7 +209,10 @@ export async function generatePlan(): Promise<number> {
        ON CONFLICT (cluster_id) DO UPDATE SET
          page_type = EXCLUDED.page_type,
          recommended_action = EXCLUDED.recommended_action,
-         status = EXCLUDED.status,
+         status = CASE
+           WHEN seo.content_plan_items.status IN ('content_generated', 'published') THEN seo.content_plan_items.status
+           ELSE EXCLUDED.status
+         END,
          priority = EXCLUDED.priority,
          confidence_score = EXCLUDED.confidence_score,
          risk_score = EXCLUDED.risk_score,

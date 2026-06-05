@@ -9,9 +9,28 @@ require_var() {
   fi
 }
 
+normalize_value() {
+  local raw="$1"
+  local normalized
+  normalized="$(printf '%s' "${raw}" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  # Strip wrapping quotes in case the secret was pasted with quotes.
+  if [[ "${normalized}" =~ ^".*"$ ]] || [[ "${normalized}" =~ ^'.*'$ ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  printf '%s' "${normalized}"
+}
+
 require_var DEPLOY_ARCHIVE_PATH
 require_var DEPLOY_APP_DIR
 require_var DEPLOY_SERVICE_NAME
+
+SERVICE_NAME="$(normalize_value "${DEPLOY_SERVICE_NAME}")"
+if [[ -z "${SERVICE_NAME}" ]]; then
+  echo "[deploy] DEPLOY_SERVICE_NAME is empty after normalization" >&2
+  exit 1
+fi
 
 BACKUP_DIR="${DEPLOY_BACKUP_DIR:-/opt/katet/backups}"
 RELEASES_DIR="${DEPLOY_RELEASES_DIR:-/opt/katet/releases}"
@@ -76,23 +95,30 @@ if [[ "${BUILD_STATUS}" -ne 0 ]]; then
   exit 1
 fi
 
-echo "[deploy] Restarting service: ${DEPLOY_SERVICE_NAME}"
-if ! systemctl restart "${DEPLOY_SERVICE_NAME}"; then
-  echo "[deploy] Service restart failed: ${DEPLOY_SERVICE_NAME}" >&2
-  systemctl status "${DEPLOY_SERVICE_NAME}" --no-pager >&2 || true
-  journalctl -u "${DEPLOY_SERVICE_NAME}" -n 120 --no-pager >&2 || true
+if ! systemctl list-unit-files --type=service --all --no-legend | awk '{print $1}' | grep -Fxq "${SERVICE_NAME}"; then
+  echo "[deploy] Service unit not found: ${SERVICE_NAME}" >&2
+  echo "[deploy] Hint: check DEPLOY_SERVICE_NAME secret (no extra spaces/newlines)." >&2
+  systemctl list-unit-files --type=service --all --no-legend | grep -Ei 'katet|frontend' >&2 || true
   exit 1
 fi
 
-if ! systemctl is-active --quiet "${DEPLOY_SERVICE_NAME}"; then
-  echo "[deploy] Service is not active after restart: ${DEPLOY_SERVICE_NAME}" >&2
-  systemctl status "${DEPLOY_SERVICE_NAME}" --no-pager >&2 || true
-  journalctl -u "${DEPLOY_SERVICE_NAME}" -n 120 --no-pager >&2 || true
+echo "[deploy] Restarting service: ${SERVICE_NAME}"
+if ! systemctl restart "${SERVICE_NAME}"; then
+  echo "[deploy] Service restart failed: ${SERVICE_NAME}" >&2
+  systemctl status "${SERVICE_NAME}" --no-pager >&2 || true
+  journalctl -u "${SERVICE_NAME}" -n 120 --no-pager >&2 || true
   exit 1
 fi
 
-systemctl is-active "${DEPLOY_SERVICE_NAME}"
-echo "[deploy] Service restarted: ${DEPLOY_SERVICE_NAME}"
+if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
+  echo "[deploy] Service is not active after restart: ${SERVICE_NAME}" >&2
+  systemctl status "${SERVICE_NAME}" --no-pager >&2 || true
+  journalctl -u "${SERVICE_NAME}" -n 120 --no-pager >&2 || true
+  exit 1
+fi
+
+systemctl is-active "${SERVICE_NAME}"
+echo "[deploy] Service restarted: ${SERVICE_NAME}"
 
 rm -f "${DEPLOY_ARCHIVE_PATH}"
 echo "[deploy] Done"

@@ -170,6 +170,8 @@ Workflow срабатывает на:
 Если заданы оба, workflow сначала пробует `SSH_PRIVATE_KEY`.
 Если ключ невалидный, но задан `DEPLOY_PASSWORD`, workflow автоматически переключается на пароль.
 
+Для `DEPLOY_SERVICE_NAME` используйте только имя unit без лишних пробелов, переводов строки и кавычек (например: `katet-frontend.service`).
+
 Если хотите обновлять `.env.local` через GitHub Actions, подготовьте base64:
 
 ```bash

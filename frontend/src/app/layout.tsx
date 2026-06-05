@@ -26,6 +26,11 @@ const displayFont = Exo_2({
   variable: "--font-display-next",
 });
 
+const primaryYandexCounterId = (process.env.NEXT_PUBLIC_YANDEX_COUNTER_IDS || "89111072")
+  .split(",")
+  .map((value) => value.trim())
+  .find(Boolean) || "89111072";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://katet.tech"),
   title: {
@@ -54,6 +59,15 @@ export default async function RootLayout({
         <SiteFooter navigation={navigation} />
         <LegacyExternalScripts />
         <LeadRequestModal />
+        <noscript>
+          <div>
+            <img
+              src={`https://mc.yandex.ru/watch/${primaryYandexCounterId}`}
+              style={{ position: "absolute", left: "-9999px" }}
+              alt=""
+            />
+          </div>
+        </noscript>
       </body>
     </html>
   );

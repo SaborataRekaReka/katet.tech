@@ -168,6 +168,9 @@ export function LegacyExternalScripts() {
       });
     };
 
+    // Load analytics on initial render so the counter is available without extra user actions.
+    loadAnalytics();
+
     TRIGGER_EVENTS.forEach((eventName) => {
       window.addEventListener(eventName, loadAnalytics, { once: true });
       window.addEventListener(eventName, loadMango, { once: true });

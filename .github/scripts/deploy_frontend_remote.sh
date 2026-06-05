@@ -54,7 +54,23 @@ echo "[deploy] Running npm ci"
 npm ci --no-audit --no-fund
 
 echo "[deploy] Running npm run build (log: ${BUILD_LOG_PATH})"
-if ! npm run build > "${BUILD_LOG_PATH}" 2>&1; then
+: > "${BUILD_LOG_PATH}"
+npm run build > "${BUILD_LOG_PATH}" 2>&1 &
+BUILD_PID=$!
+
+# Stream remote build log back to GitHub Actions in real time.
+tail -n +1 -f "${BUILD_LOG_PATH}" &
+TAIL_PID=$!
+
+set +e
+wait "${BUILD_PID}"
+BUILD_STATUS=$?
+set -e
+
+kill "${TAIL_PID}" >/dev/null 2>&1 || true
+wait "${TAIL_PID}" 2>/dev/null || true
+
+if [[ "${BUILD_STATUS}" -ne 0 ]]; then
   echo "[deploy] Build failed. Last lines from ${BUILD_LOG_PATH}:" >&2
   tail -n 200 "${BUILD_LOG_PATH}" >&2 || true
   exit 1

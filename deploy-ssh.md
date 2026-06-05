@@ -153,13 +153,22 @@ Workflow срабатывает на:
 
 Нужно заполнить GitHub Secrets (Repository -> Settings -> Secrets and variables -> Actions):
 
-- `DEPLOY_HOST` = `185.171.82.125`
+- `DEPLOY_HOST` = `159.194.204.135`
 - `DEPLOY_PORT` = `22`
 - `DEPLOY_USER` = `root`
 - `DEPLOY_APP_DIR` = `/opt/katet/app`
 - `DEPLOY_SERVICE_NAME` = `katet-frontend.service`
-- `SSH_PRIVATE_KEY` = приватный ключ от пары, чей публичный ключ добавлен в `~/.ssh/authorized_keys` на сервере
+- `SSH_PRIVATE_KEY` = (рекомендуется) приватный ключ от пары, чей публичный ключ добавлен в `~/.ssh/authorized_keys` на сервере
+- `DEPLOY_PASSWORD` = (fallback) пароль пользователя `root`, если SSH-ключа пока нет
 - `FRONTEND_ENV_LOCAL_B64` = (необязательно) base64 от полного содержимого `frontend/.env.local`
+
+Важно: для авторизации достаточно одного варианта:
+
+- либо `SSH_PRIVATE_KEY`
+- либо `DEPLOY_PASSWORD`
+
+Если заданы оба, workflow сначала пробует `SSH_PRIVATE_KEY`.
+Если ключ невалидный, но задан `DEPLOY_PASSWORD`, workflow автоматически переключается на пароль.
 
 Если хотите обновлять `.env.local` через GitHub Actions, подготовьте base64:
 
@@ -207,6 +216,16 @@ ssh root@159.194.204.135 "cd /opt/katet/app && git checkout <PREV_COMMIT> && sys
 4. После деплоя сервис не стартует
    - Смотрите логи сборки: `/opt/katet/logs/frontend-build.log`
    - Проверяйте статус: `systemctl status katet-frontend.service`
+
+5. GitHub Actions падает на SCP/SSH с `Permission denied (publickey,password)`
+    - Если используете ключ:
+       - Убедитесь, что в `SSH_PRIVATE_KEY` сохранен именно приватный ключ (строки `BEGIN ... PRIVATE KEY`), а не публичный `ssh-rsa ...`.
+       - Добавьте соответствующий публичный ключ в `/root/.ssh/authorized_keys` на сервере `159.194.204.135`.
+       - Проверьте вход:
+          `ssh -i ~/.ssh/<private_key> -o IdentitiesOnly=yes -o PreferredAuthentications=publickey root@159.194.204.135 "echo ok"`
+    - Если используете пароль:
+       - Проверьте, что задан секрет `DEPLOY_PASSWORD`.
+       - Проверьте, что для `root` не отключена SSH password-аутентификация (на сервере `sshd_config`: `PasswordAuthentication yes`).
 
 Публичный SSH-ключ для вставки в Beget:
 

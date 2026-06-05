@@ -130,6 +130,55 @@ ssh root@159.194.204.135 "docker exec -e PGPASSWORD=katet_directus_password kate
 - `crm_skipped = false`
 - `crm_reason` пустой
 
+## 9.3. Автодеплой через GitHub Actions
+
+В репозитории добавлен workflow:
+
+- `.github/workflows/deploy-beget.yml`
+- `.github/scripts/deploy_frontend_remote.sh`
+
+Workflow срабатывает на:
+
+- push в `main`/`master` при изменениях в `frontend/**`
+- ручной запуск `workflow_dispatch`
+
+Что делает pipeline:
+
+1. Локально в GitHub runner проверяет сборку `frontend`.
+2. Упаковывает `frontend` в tar.gz.
+3. Копирует архив на сервер.
+4. На сервере создает backup текущего `frontend`.
+5. Обновляет код в `/opt/katet/app/frontend` (без перезаписи `.env.local`, если не передан секрет env).
+6. Запускает `npm ci`, `npm run build`, `systemctl restart katet-frontend.service`.
+
+Нужно заполнить GitHub Secrets (Repository -> Settings -> Secrets and variables -> Actions):
+
+- `DEPLOY_HOST` = `185.171.82.125`
+- `DEPLOY_PORT` = `22`
+- `DEPLOY_USER` = `root`
+- `DEPLOY_APP_DIR` = `/opt/katet/app`
+- `DEPLOY_SERVICE_NAME` = `katet-frontend.service`
+- `SSH_PRIVATE_KEY` = приватный ключ от пары, чей публичный ключ добавлен в `~/.ssh/authorized_keys` на сервере
+- `FRONTEND_ENV_LOCAL_B64` = (необязательно) base64 от полного содержимого `frontend/.env.local`
+
+Если хотите обновлять `.env.local` через GitHub Actions, подготовьте base64:
+
+```bash
+base64 -w 0 frontend/.env.local
+```
+
+Для macOS:
+
+```bash
+base64 frontend/.env.local | tr -d '\n'
+```
+
+Проверка первого запуска:
+
+1. Запустите workflow вручную из вкладки Actions.
+2. Проверьте статус job `deploy`.
+3. На сервере проверьте: `systemctl status katet-frontend.service`.
+
 ## 10. Откат
 
 ```bash

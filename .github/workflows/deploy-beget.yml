@@ -1,0 +1,92 @@
+name: Deploy Frontend To Beget
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-beget.yml"
+      - ".github/scripts/deploy_frontend_remote.sh"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-beget-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
+      DEPLOY_SERVICE_NAME: ${{ secrets.DEPLOY_SERVICE_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST}"
+          test -n "${DEPLOY_USER}"
+          test -n "${DEPLOY_APP_DIR}"
+          test -n "${DEPLOY_SERVICE_NAME}"
+          test -n "${{ secrets.SSH_PRIVATE_KEY }}"
+
+      - name: Install frontend dependencies and run build check
+        run: |
+          set -euo pipefail
+          npm --prefix ./frontend ci
+          npm --prefix ./frontend run build
+
+      - name: Prepare SSH key and known_hosts
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "${DEPLOY_PORT:-22}" -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Build deploy archive
+        run: |
+          set -euo pipefail
+          tar -czf frontend-${{ github.sha }}.tgz \
+            --exclude='frontend/node_modules' \
+            --exclude='frontend/.next' \
+            --exclude='frontend/.env.local' \
+            -C . frontend
+
+      - name: Upload archive and remote script
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          scp -P "${PORT}" frontend-${{ github.sha }}.tgz "${TARGET}:/tmp/frontend-${{ github.sha }}.tgz"
+          scp -P "${PORT}" ./.github/scripts/deploy_frontend_remote.sh "${TARGET}:/tmp/deploy_frontend_remote.sh"
+
+      - name: Run remote deploy
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "${PORT}" "${TARGET}" \
+            "chmod +x /tmp/deploy_frontend_remote.sh && \
+             DEPLOY_ARCHIVE_PATH=/tmp/frontend-${{ github.sha }}.tgz \
+             DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' \
+             DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
+             DEPLOY_LABEL='${{ github.sha }}' \
+             FRONTEND_ENV_LOCAL_B64='${{ secrets.FRONTEND_ENV_LOCAL_B64 }}' \
+             /tmp/deploy_frontend_remote.sh"

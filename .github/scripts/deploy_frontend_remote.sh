@@ -18,6 +18,7 @@ RELEASES_DIR="${DEPLOY_RELEASES_DIR:-/opt/katet/releases}"
 LOGS_DIR="${DEPLOY_LOGS_DIR:-/opt/katet/logs}"
 TIMESTAMP="$(date +%F-%H%M%S)"
 DEPLOY_LABEL="${DEPLOY_LABEL:-manual}"
+BUILD_LOG_PATH="${LOGS_DIR}/frontend-build.log"
 
 mkdir -p "${BACKUP_DIR}" "${RELEASES_DIR}" "${LOGS_DIR}" "${DEPLOY_APP_DIR}"
 
@@ -49,10 +50,31 @@ else
 fi
 
 cd "${TARGET_FRONTEND_DIR}"
-npm ci
-npm run build > "${LOGS_DIR}/frontend-build.log" 2>&1
+echo "[deploy] Running npm ci"
+npm ci --no-audit --no-fund
 
-systemctl restart "${DEPLOY_SERVICE_NAME}"
+echo "[deploy] Running npm run build (log: ${BUILD_LOG_PATH})"
+if ! npm run build > "${BUILD_LOG_PATH}" 2>&1; then
+  echo "[deploy] Build failed. Last lines from ${BUILD_LOG_PATH}:" >&2
+  tail -n 200 "${BUILD_LOG_PATH}" >&2 || true
+  exit 1
+fi
+
+echo "[deploy] Restarting service: ${DEPLOY_SERVICE_NAME}"
+if ! systemctl restart "${DEPLOY_SERVICE_NAME}"; then
+  echo "[deploy] Service restart failed: ${DEPLOY_SERVICE_NAME}" >&2
+  systemctl status "${DEPLOY_SERVICE_NAME}" --no-pager >&2 || true
+  journalctl -u "${DEPLOY_SERVICE_NAME}" -n 120 --no-pager >&2 || true
+  exit 1
+fi
+
+if ! systemctl is-active --quiet "${DEPLOY_SERVICE_NAME}"; then
+  echo "[deploy] Service is not active after restart: ${DEPLOY_SERVICE_NAME}" >&2
+  systemctl status "${DEPLOY_SERVICE_NAME}" --no-pager >&2 || true
+  journalctl -u "${DEPLOY_SERVICE_NAME}" -n 120 --no-pager >&2 || true
+  exit 1
+fi
+
 systemctl is-active "${DEPLOY_SERVICE_NAME}"
 echo "[deploy] Service restarted: ${DEPLOY_SERVICE_NAME}"
 

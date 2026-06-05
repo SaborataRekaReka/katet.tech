@@ -21,7 +21,7 @@ const MANGO_DOMAIN = (process.env.NEXT_PUBLIC_MANGO_DOMAIN || "katet.tech").trim
 const MANGO_PHONE = (process.env.NEXT_PUBLIC_MANGO_PHONE || "74994606567").trim();
 const MANGO_CALLTRACKING_ID = Number(process.env.NEXT_PUBLIC_MANGO_CALLTRACKING_ID || "27903");
 const YANDEX_WEBVISOR = (process.env.NEXT_PUBLIC_YANDEX_WEBVISOR || "true").trim().toLowerCase() !== "false";
-const YANDEX_COUNTER_IDS = (process.env.NEXT_PUBLIC_YANDEX_COUNTER_IDS || "96912505")
+const YANDEX_COUNTER_IDS = (process.env.NEXT_PUBLIC_YANDEX_COUNTER_IDS || "89111072")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -86,6 +86,8 @@ export function LegacyExternalScripts() {
         window.ym(String(counterId), "init", {
           clickmap: true,
           trackLinks: true,
+          referrer: document.referrer,
+          url: location.href,
           accurateTrackBounce: true,
           webvisor: YANDEX_WEBVISOR,
           ecommerce: "dataLayer",

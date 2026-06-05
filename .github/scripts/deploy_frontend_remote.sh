@@ -49,7 +49,7 @@ resolve_service_name() {
     done
   fi
 
-  compact="$(printf '%s' "${requested}" | tr -d '[:space:]' | tr -d '"\'')"
+  compact="$(printf '%s' "${requested}" | tr -d '[:space:]' | sed "s/[\"']//g")"
   compact="$(printf '%s' "${compact}" | tr -cd '[:alnum:]._-')"
   if [[ -n "${compact}" ]]; then
     if [[ "${compact}" == *.service ]]; then

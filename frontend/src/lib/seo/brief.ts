@@ -1,8 +1,8 @@
 import "server-only";
 
 import { one, run } from "./db";
-import { chatJson, MODELS } from "./openai";
-import { loadContext } from "./seed";
+import { chatJson } from "./openai";
+import { loadContext, normalizeContextType } from "./seed";
 import type { CompanyContext, ContentBrief, Intent, PageType } from "./types";
 
 /**
@@ -40,7 +40,8 @@ async function clusterKeywords(clusterId: number): Promise<{ keyword: string; ro
 function collectFacts(context: CompanyContext[]): string[] {
   const facts: string[] = [];
   for (const c of context) {
-    if (["service", "service_category", "equipment_type", "advantage", "case", "restriction"].includes(c.context_type)) {
+    const type = normalizeContextType(c.context_type);
+    if (["service", "service_category", "equipment_type", "advantage", "case", "restriction"].includes(type)) {
       facts.push(`${c.name}${c.description ? `: ${c.description}` : ""}`);
     }
   }
@@ -96,7 +97,7 @@ export async function generateBrief(planItemId: number, reviewer = "system"): Pr
 
   let brief = fallbackBrief(cluster, keywords, pageType);
   const llm = await chatJson<ContentBrief>({
-    model: MODELS.strong,
+    modelSlot: "strong",
     temperature: 0.3,
     system:
       "Ты SEO-стратег и редактор. Сформируй техническое задание (ТЗ) на страницу строго на основе переданного кластера запросов и фактов компании. " +

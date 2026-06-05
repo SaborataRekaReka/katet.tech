@@ -1,0 +1,26 @@
+{
+  "name": "directus-extension-katet-seo-studio-link",
+  "version": "1.0.0",
+  "description": "Directus module with a quick link to SEO Studio",
+  "type": "module",
+  "scripts": {
+    "build": "directus-extension build",
+    "dev": "directus-extension build --watch"
+  },
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-module"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@directus/extensions-sdk": "^17.1.4",
+    "vue": "^3.5.13"
+  },
+  "directus:extension": {
+    "type": "module",
+    "path": "dist/index.js",
+    "source": "src/index.js",
+    "host": "^11.0.0"
+  }
+}

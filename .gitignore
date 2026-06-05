@@ -4,7 +4,11 @@ local/wp-local/
 directus/.env
 directus/postgres-data/
 directus/uploads/
-directus/extensions/
+directus/extensions/*
+!directus/extensions/directus-extension-katet-seo-studio-link/
+directus/extensions/directus-extension-katet-seo-studio-link/node_modules/
+!directus/extensions/directus-extension-katet-seo-pipeline/
+directus/extensions/directus-extension-katet-seo-pipeline/node_modules/
 directus/migration/node_modules/
 # transient artifacts
 _deploy_bundle/
@@ -16,3 +20,4 @@ katet-deploy-*.tar.gz
 *.sql
 *.sql.gz
 *.tar.gz
+!directus/schema/011_seo_studio_module_bar.sql

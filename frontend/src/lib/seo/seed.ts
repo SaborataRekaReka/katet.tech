@@ -11,6 +11,67 @@ import type { CompanyContext } from "./types";
 
 const COMMERCIAL_MODIFIERS = ["аренда", "услуги", "заказать", "цена"];
 
+type CanonicalContextType =
+  | "service"
+  | "service_category"
+  | "equipment_type"
+  | "task"
+  | "region"
+  | "customer_segment"
+  | "restriction"
+  | "advantage"
+  | "faq"
+  | "case"
+  | "forbidden_topic";
+
+const KNOWN_CONTEXT_TYPES = new Set<CanonicalContextType>([
+  "service",
+  "service_category",
+  "equipment_type",
+  "task",
+  "region",
+  "customer_segment",
+  "restriction",
+  "advantage",
+  "faq",
+  "case",
+  "forbidden_topic",
+]);
+
+function normalizeKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Supports both legacy fixed context types and new free-form "point/value"
+ * rows by inferring a canonical type from the point name.
+ */
+export function normalizeContextType(rawType: string): CanonicalContextType {
+  const normalized = normalizeKey(rawType || "").replace(/ /g, "_") as CanonicalContextType;
+  if (KNOWN_CONTEXT_TYPES.has(normalized)) return normalized;
+
+  const key = normalizeKey(rawType || "");
+
+  if (/запрет|forbidden|табу|исключ|не\s*писать|не\s*упомин/u.test(key)) return "forbidden_topic";
+  if (/faq|вопрос|вопросы|q&a|q a/u.test(key)) return "faq";
+  if (/регион|город|област|район|локац|гео|адрес/u.test(key)) return "region";
+  if (/задач|сценар|применен|кейс\s*использ/u.test(key)) return "task";
+  if (/преимущ|утп|почему\s*мы|сильные\s*стороны/u.test(key)) return "advantage";
+  if (/огранич|услов|время\s*работ|график|режим\s*работ|миним|требован/u.test(key)) return "restriction";
+  if (/кейс|пример\s*работ|портфолио/u.test(key)) return "case";
+  if (/техника|услуг|направлен|категор|что\s*делаем|продукт|service/u.test(key)) return "service_category";
+
+  return "service_category";
+}
+
+function withCanonicalType(context: CompanyContext[]) {
+  return context.map((item) => ({ ...item, canonicalType: normalizeContextType(item.context_type) }));
+}
+
 type SeedDraft = {
   seed_term: string;
   seed_type: string;
@@ -35,13 +96,14 @@ function isForbidden(name: string, forbidden: string[]): boolean {
 
 /** Produce seed drafts from context. Combines services with tasks/regions. */
 export function buildSeeds(context: CompanyContext[]): SeedDraft[] {
-  const services = context.filter((c) => c.context_type === "service" || c.context_type === "service_category");
-  const equipment = context.filter((c) => c.context_type === "equipment_type");
-  const tasks = context.filter((c) => c.context_type === "task");
-  const regions = context.filter((c) => c.context_type === "region");
-  const faqs = context.filter((c) => c.context_type === "faq");
-  const forbidden = context
-    .filter((c) => c.context_type === "forbidden_topic")
+  const normalizedContext = withCanonicalType(context);
+  const services = normalizedContext.filter((c) => c.canonicalType === "service" || c.canonicalType === "service_category");
+  const equipment = normalizedContext.filter((c) => c.canonicalType === "equipment_type");
+  const tasks = normalizedContext.filter((c) => c.canonicalType === "task");
+  const regions = normalizedContext.filter((c) => c.canonicalType === "region");
+  const faqs = normalizedContext.filter((c) => c.canonicalType === "faq");
+  const forbidden = normalizedContext
+    .filter((c) => c.canonicalType === "forbidden_topic")
     .map((c) => c.name.toLowerCase());
 
   const drafts: SeedDraft[] = [];

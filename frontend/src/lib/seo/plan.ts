@@ -1,7 +1,7 @@
 import "server-only";
 
 import { run } from "./db";
-import { loadContext } from "./seed";
+import { loadContext, normalizeContextType } from "./seed";
 import { analyzeGap } from "./siteGap";
 import { getScoringConfig } from "./settings";
 import { qualifies, score, type ScoringInput } from "./scoring";
@@ -51,18 +51,19 @@ type ContextSummary = {
 };
 
 function summarizeContext(context: CompanyContext[]): ContextSummary {
+  const typeOf = (row: CompanyContext) => normalizeContextType(row.context_type);
   return {
     businessTopics: context.filter(
       (c) =>
-        c.context_type === "service" ||
-        c.context_type === "service_category" ||
-        c.context_type === "equipment_type" ||
-        c.context_type === "task",
+        typeOf(c) === "service" ||
+        typeOf(c) === "service_category" ||
+        typeOf(c) === "equipment_type" ||
+        typeOf(c) === "task",
     ),
-    hasFaq: context.some((c) => c.context_type === "faq"),
-    hasCase: context.some((c) => c.context_type === "case"),
-    hasAdvantage: context.some((c) => c.context_type === "advantage"),
-    regions: context.filter((c) => c.context_type === "region").map((c) => c.name.toLowerCase()),
+    hasFaq: context.some((c) => typeOf(c) === "faq"),
+    hasCase: context.some((c) => typeOf(c) === "case"),
+    hasAdvantage: context.some((c) => typeOf(c) === "advantage"),
+    regions: context.filter((c) => typeOf(c) === "region").map((c) => c.name.toLowerCase()),
   };
 }
 

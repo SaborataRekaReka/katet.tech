@@ -9,6 +9,22 @@
 - Админ по умолчанию: `admin@example.com`
 - Пароль по умолчанию: `katet_directus_admin`
 
+## SEO Pipeline прямо в Directus
+
+В левом модульном меню Directus добавлен пункт `SEO Studio` (иконка `travel_explore`) с нативным UI конвейера:
+
+- `Overview`: запуск full pipeline и batch генерации;
+- `Plan Queue`: review действий и запуск brief/article по элементам плана;
+- `Articles`: редактирование и публикация сгенерированных статей;
+- `Jobs`: мониторинг прогресса и логов задач.
+
+Расширение состоит из двух пакетов:
+
+- `directus/extensions/directus-extension-katet-seo-studio-link/` — app module UI;
+- `directus/extensions/directus-extension-katet-seo-pipeline/` — endpoint bridge (`/directus-extension-katet-seo-pipeline/*`) для вызова SEO API.
+
+Если в проекте задан `SEO_ADMIN_TOKEN`, в модуле нужно заполнить поле `SEO token` (он сохраняется в localStorage браузера для этого UI).
+
 Пароли выше предназначены только для локального окружения. Для staging/production нужно создать `directus/.env` на основе `.env.example` и заменить значения.
 
 ## Быстрый старт
@@ -22,6 +38,24 @@ docker compose --project-directory .\directus exec -T postgres psql -U katet_dir
 docker compose --project-directory .\directus exec -T postgres psql -U katet_directus -d katet_directus -f /schema/003_media_assets.sql
 docker compose --project-directory .\directus exec -T postgres psql -U katet_directus -d katet_directus -f /schema/004_directus_admin_metadata.sql
 docker compose --project-directory .\directus exec -T postgres psql -U katet_directus -d katet_directus -f /schema/005_public_read_permissions.sql
+docker compose --project-directory .\directus exec -T postgres psql -U katet_directus -d katet_directus -f /schema/010_seo_pipeline.sql
+docker compose --project-directory .\directus exec -T postgres psql -U katet_directus -d katet_directus -f /schema/011_seo_studio_module_bar.sql
+```
+
+Сборка расширений SEO в Directus:
+
+```powershell
+Push-Location .\directus\extensions\directus-extension-katet-seo-pipeline
+npm install
+npm run build
+Pop-Location
+
+Push-Location .\directus\extensions\directus-extension-katet-seo-studio-link
+npm install
+npm run build
+Pop-Location
+
+docker compose --project-directory .\directus up -d directus
 ```
 
 Импорт из уже поднятой локальной WordPress-базы:

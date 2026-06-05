@@ -43,12 +43,15 @@ services:
       PUBLIC_URL: ${DIRECTUS_PUBLIC_URL:-http://localhost:8055}
       CORS_ENABLED: "true"
       CORS_ORIGIN: ${DIRECTUS_CORS_ORIGIN:-http://localhost:3000,http://localhost:8081,http://127.0.0.1:3000,http://127.0.0.1:8081}
+      EXTENSIONS_AUTO_RELOAD: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      SEO_STUDIO_API_BASE_URL: ${SEO_STUDIO_API_BASE_URL:-http://host.docker.internal:3000}
+      SEO_STUDIO_TOKEN: ${SEO_STUDIO_TOKEN:-}
       TELEMETRY: "false"
     volumes:
       - uploads:/directus/uploads
-      - extensions:/directus/extensions
+      - ./extensions:/directus/extensions
 
 volumes:
   postgres-data:
   uploads:
-  extensions:

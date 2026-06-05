@@ -23,6 +23,50 @@ import { getScoringConfig, getSemanticsCleaningConfig } from "./settings";
 const STEPS = ["seeds", "collect", "clean", "cluster", "plan", "draft", "done"] as const;
 const CSV_STEPS = ["clean", "cluster", "plan", "done"] as const;
 
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(raw)));
+}
+
+const BRIEF_TIMEOUT_MS = envInt("SEO_BRIEF_TIMEOUT_MS", 120_000, 10_000, 3_600_000);
+const ARTICLE_TIMEOUT_MS = envInt("SEO_ARTICLE_TIMEOUT_MS", 300_000, 10_000, 3_600_000);
+
+type DraftFailure = { planItemId: number; reason: string };
+type DraftBatchResult = { drafted: number; total: number; failures: DraftFailure[] };
+type DraftPhase = "start" | "brief" | "article" | "success" | "error";
+type DraftProgressEvent = {
+  drafted: number;
+  total: number;
+  planItemId: number;
+  phase: DraftPhase;
+  message: string;
+  error?: string;
+};
+
+function reasonFromError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+async function withTimeout<T>(operation: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label}: timeout after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+
+    void operation()
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 function clusterMethodLabel(method: string): string {
   if (method === "ai_embeddings") return "ИИ-кластеризация по смыслу";
   if (method === "ai_llm") return "ИИ-кластеризация моделью";
@@ -59,10 +103,10 @@ export type FullRunOptions = { autoDraftTop?: number };
 
 async function draftTopArticles(
   limit: number,
-  onProgress?: (drafted: number, total: number, planItemId: number, error?: string) => Promise<void>,
+  onProgress?: (event: DraftProgressEvent) => Promise<void>,
   clusterIds?: number[],
-): Promise<number> {
-  if (limit <= 0) return 0;
+): Promise<DraftBatchResult> {
+  if (limit <= 0) return { drafted: 0, total: 0, failures: [] };
 
   const selected = (clusterIds ?? []).filter((n) => Number.isFinite(n));
   const clusterFilter = selected.length > 0 ? `AND p.cluster_id = ANY($2::int[])` : "";
@@ -84,21 +128,75 @@ async function draftTopArticles(
   );
 
   let drafted = 0;
+  const failures: DraftFailure[] = [];
   for (const item of top) {
+    await onProgress?.({
+      drafted,
+      total: top.length,
+      planItemId: item.id,
+      phase: "start",
+      message: `План #${item.id}: старт генерации`,
+    });
+
     try {
       const existingBrief = await one<{ id: number }>(
         `SELECT id FROM seo.content_briefs WHERE content_plan_item_id = $1 LIMIT 1`,
         [item.id],
       );
-      if (!existingBrief) await generateBrief(item.id, "auto");
-      await generateArticle(item.id);
+
+      if (!existingBrief) {
+        await onProgress?.({
+          drafted,
+          total: top.length,
+          planItemId: item.id,
+          phase: "brief",
+          message: `План #${item.id}: генерация brief`,
+        });
+        await withTimeout(
+          () => generateBrief(item.id, "auto"),
+          BRIEF_TIMEOUT_MS,
+          `Brief for plan #${item.id}`,
+        );
+      }
+
+      await onProgress?.({
+        drafted,
+        total: top.length,
+        planItemId: item.id,
+        phase: "article",
+        message: `План #${item.id}: генерация статьи`,
+      });
+
+      await withTimeout(
+        () => generateArticle(item.id),
+        ARTICLE_TIMEOUT_MS,
+        `Article for plan #${item.id}`,
+      );
+
       drafted += 1;
-      await onProgress?.(drafted, top.length, item.id);
+
+      await onProgress?.({
+        drafted,
+        total: top.length,
+        planItemId: item.id,
+        phase: "success",
+        message: `Создан черновик по плану #${item.id}: ${drafted}/${top.length}`,
+      });
     } catch (error) {
-      await onProgress?.(drafted, top.length, item.id, (error as Error).message);
+      const reason = reasonFromError(error);
+      failures.push({ planItemId: item.id, reason });
+      await onProgress?.({
+        drafted,
+        total: top.length,
+        planItemId: item.id,
+        phase: "error",
+        message: `Ошибка по плану #${item.id}`,
+        error: reason,
+      });
     }
   }
-  return drafted;
+
+  return { drafted, total: top.length, failures };
 }
 
 /** Run the entire pipeline. Designed to be awaited inside an API route. */
@@ -131,16 +229,26 @@ export async function runFullPipeline(jobId: number, options: FullRunOptions = {
 
     if (autoDraftTop > 0) {
       await setStep(jobId, "draft", 6, `Авто-черновики для топ-${autoDraftTop} кластеров`);
-      const drafted = await draftTopArticles(autoDraftTop, async (_drafted, _total, planItemId, error) => {
-        if (error) await setStep(jobId, "draft", 6, `Ошибка черновика #${planItemId}: ${error}`);
+      const result = await draftTopArticles(autoDraftTop, async (event) => {
+        if (event.phase === "article") {
+          await setStep(jobId, "draft", 6, event.message);
+          return;
+        }
+        if (event.phase === "error") {
+          await setStep(jobId, "draft", 6, `Ошибка черновика #${event.planItemId}: ${event.error}`);
+        }
       });
+
+      const drafted = result.drafted;
       await setStep(
         jobId,
         "draft",
         6,
         drafted > 0
-          ? `Создано черновиков статей: ${drafted}`
-          : "Новых черновиков нет: нет незакрытых тем без статьи",
+          ? `Создано черновиков статей: ${drafted}${result.failures.length > 0 ? `; ошибок: ${result.failures.length}` : ""}`
+          : result.failures.length > 0
+            ? `Черновики не созданы. Ошибок: ${result.failures.length}`
+            : "Новых черновиков нет: нет незакрытых тем без статьи",
       );
     }
 
@@ -216,22 +324,50 @@ export async function runArticleBatch(jobId: number, limit: number, clusterIds?:
   const safeLimit = Math.max(1, Math.min(20, Math.trunc(limit)));
   try {
     await setStep(jobId, "draft", 1, `Выбор тем для генерации (до ${safeLimit})`);
-    const drafted = await draftTopArticles(
+    const result = await draftTopArticles(
       safeLimit,
-      async (done, total, planItemId, error) => {
-      const message = error
-        ? `Ошибка статьи #${planItemId}: ${error}`
-        : `Создан черновик по плану #${planItemId}: ${done}/${total}`;
-        await setStep(jobId, "draft", Math.max(1, done), message);
+      async (event) => {
+        if (event.phase === "start") {
+          await setStep(jobId, "draft", Math.max(1, event.drafted), event.message);
+          return;
+        }
+
+        if (event.phase === "article") {
+          await setStep(jobId, "draft", Math.max(1, event.drafted), event.message);
+          return;
+        }
+
+        if (event.phase === "error") {
+          await setStep(
+            jobId,
+            "draft",
+            Math.max(1, event.drafted),
+            `Ошибка статьи #${event.planItemId}: ${event.error}`,
+          );
+          return;
+        }
+
+        if (event.phase === "success") {
+          await setStep(jobId, "draft", Math.max(1, event.drafted), event.message);
+        }
       },
       clusterIds,
     );
+
+    if (result.failures.length > 0 && result.drafted === 0) {
+      const first = result.failures[0];
+      const message = `Не удалось создать ни одного черновика. Первая ошибка #${first.planItemId}: ${first.reason}`;
+      await setStep(jobId, "error", 0, message);
+      await finishJob(jobId, message);
+      return;
+    }
+
     await setStep(
       jobId,
       "done",
       safeLimit + 1,
-      drafted > 0
-        ? `Создано черновиков статей: ${drafted}`
+      result.drafted > 0
+        ? `Создано черновиков статей: ${result.drafted}${result.failures.length > 0 ? `; ошибок: ${result.failures.length}` : ""}`
         : "Новых черновиков нет: нет незакрытых тем без статьи",
     );
     await finishJob(jobId);

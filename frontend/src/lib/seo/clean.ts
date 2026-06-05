@@ -2,7 +2,7 @@ import "server-only";
 
 import { run } from "./db";
 import type { CompanyContext, Intent, SemanticsCleaningConfig } from "./types";
-import { loadContext } from "./seed";
+import { loadContext, normalizeContextType } from "./seed";
 
 /**
  * Keyword cleaning, normalization and intent classification (Task.md §10-11).
@@ -173,14 +173,26 @@ type ContextIndex = {
 
 function buildContextIndex(context: CompanyContext[]): ContextIndex {
   const toTokens = (name: string) => normalize(name).lemmas;
+  const canonicalTypeOf = (row: CompanyContext) => normalizeContextType(row.context_type);
   return {
     services: context
-      .filter((c) => c.context_type === "service" || c.context_type === "service_category" || c.context_type === "equipment_type")
-      .map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name), contextType: c.context_type })),
-    tasks: context.filter((c) => c.context_type === "task").map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name) })),
-    regions: context.filter((c) => c.context_type === "region").map((c) => c.name.toLowerCase()),
-    forbidden: context.filter((c) => c.context_type === "forbidden_topic").map((c) => c.name.toLowerCase()),
-    restrictions: context.filter((c) => c.context_type === "restriction").map((c) => c.name.toLowerCase()),
+      .filter((c) => {
+        const type = canonicalTypeOf(c);
+        return type === "service" || type === "service_category" || type === "equipment_type";
+      })
+      .map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name), contextType: canonicalTypeOf(c) })),
+    tasks: context
+      .filter((c) => canonicalTypeOf(c) === "task")
+      .map((c) => ({ id: c.id, name: c.name, tokens: toTokens(c.name) })),
+    regions: context
+      .filter((c) => canonicalTypeOf(c) === "region")
+      .map((c) => c.name.toLowerCase()),
+    forbidden: context
+      .filter((c) => canonicalTypeOf(c) === "forbidden_topic")
+      .map((c) => c.name.toLowerCase()),
+    restrictions: context
+      .filter((c) => canonicalTypeOf(c) === "restriction")
+      .map((c) => c.name.toLowerCase()),
   };
 }
 

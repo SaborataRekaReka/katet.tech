@@ -18,6 +18,7 @@ export type RichPage = {
   slug: string;
   url_path: string;
   body: string | null;
+  content_blocks?: unknown;
   excerpt: string | null;
   seo_title: string | null;
   meta_description: string | null;
@@ -352,6 +353,40 @@ function rewriteImportedMediaUrls(value: string, mediaMap: Map<string, string>) 
   });
 }
 
+function hasLegacyUploadUrlsInValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value.includes("/wp-content/uploads/");
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasLegacyUploadUrlsInValue(entry));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.values(value).some((entry) => hasLegacyUploadUrlsInValue(entry));
+  }
+
+  return false;
+}
+
+function rewriteLegacyUploadUrlsInValue(value: unknown, mediaMap: Map<string, string>): unknown {
+  if (typeof value === "string") {
+    return value.includes("/wp-content/uploads/") ? rewriteImportedMediaUrls(value, mediaMap) : value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => rewriteLegacyUploadUrlsInValue(entry, mediaMap));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, rewriteLegacyUploadUrlsInValue(entry, mediaMap)]),
+    );
+  }
+
+  return value;
+}
+
 async function rewriteContentRecords<T extends Record<string, unknown>>(records: T[]) {
   if (!records.length) return records;
 
@@ -360,7 +395,7 @@ async function rewriteContentRecords<T extends Record<string, unknown>>(records:
     contentFields.some((field) => {
       const value = record[field];
       return typeof value === "string" && value.includes("/wp-content/uploads/");
-    }),
+    }) || hasLegacyUploadUrlsInValue(record.content_blocks),
   );
 
   if (!hasLegacyUploadUrls) return records;
@@ -374,6 +409,9 @@ async function rewriteContentRecords<T extends Record<string, unknown>>(records:
       if (typeof next[field] === "string") {
         next[field] = rewriteImportedMediaUrls(next[field], mediaMap);
       }
+    }
+    if (Object.hasOwn(next, "content_blocks")) {
+      next.content_blocks = rewriteLegacyUploadUrlsInValue(next.content_blocks, mediaMap);
     }
     return next as T;
   });
@@ -885,6 +923,7 @@ export const getPageByPath = cache(async (path: string) => {
         p.slug,
         p.url_path,
         p.body,
+        p.content_blocks,
         p.excerpt,
         p.seo_title,
         p.meta_description,

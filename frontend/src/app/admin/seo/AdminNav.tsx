@@ -6,9 +6,12 @@ import styles from "./seo-admin.module.css";
 
 const TABS = [
   { href: "/admin/seo", label: "Запросы" },
+  { href: "/admin/seo/semantics", label: "Семантика" },
   { href: "/admin/seo/clusters", label: "Кластеры" },
+  { href: "/admin/seo/plan", label: "План" },
   { href: "/admin/seo/generate", label: "Генерация" },
   { href: "/admin/seo/articles", label: "Статьи" },
+  { href: "/admin/seo/context", label: "Контекст" },
 ];
 
 export function AdminNav() {

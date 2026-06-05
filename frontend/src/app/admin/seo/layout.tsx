@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { isAdmin } from "@/lib/seo/auth";
-import { LoginForm } from "./LoginForm";
+import Link from "next/link";
+import { directusAdminUrl } from "@/lib/admin/directusLinks";
 import { AdminNav } from "./AdminNav";
 import styles from "./seo-admin.module.css";
 
@@ -12,26 +12,26 @@ export const metadata = {
 };
 
 export default async function SeoAdminLayout({ children }: { children: ReactNode }) {
-  const allowed = await isAdmin();
-  if (!allowed) {
-    return (
-      <div className={styles.loginWrap}>
-        <div className={styles.loginCard}>
-          <h1 className={styles.h1}>SEO-конвейер</h1>
-          <p className={styles.muted}>Введите токен доступа.</p>
-          <LoginForm />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={styles.shell}>
-      <header className={styles.topbar}>
-        <span className={styles.brand}>SEO-конвейер</span>
-        <AdminNav />
+    <section className={styles.moduleRoot}>
+      <header className={styles.moduleHeader}>
+        <div>
+          <h2 className={styles.moduleTitle}>SEO Studio</h2>
+          <p className={styles.moduleLead}>Создание контента, работа с семантикой и публикациями в связке с Directus.</p>
+        </div>
+
+        <div className={styles.moduleActions}>
+          <Link className={styles.moduleAction} href="/admin">К обзору админки</Link>
+          <a className={styles.moduleAction} href={directusAdminUrl("/content/posts")} target="_blank" rel="noreferrer">Статьи в Directus</a>
+          <a className={styles.moduleAction} href={directusAdminUrl("/content/leads")} target="_blank" rel="noreferrer">Лиды в Directus</a>
+        </div>
       </header>
+
+      <div className={styles.moduleTabsWrap}>
+        <AdminNav />
+      </div>
+
       <main className={styles.container}>{children}</main>
-    </div>
+    </section>
   );
 }

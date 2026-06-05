@@ -1,7 +1,7 @@
 import "server-only";
 
 import { run } from "./db";
-import { chatJson, cosineSimilarity, embed, getLastEmbeddingError, MODELS } from "./openai";
+import { chatJson, cosineSimilarity, embed, getLastEmbeddingError } from "./openai";
 import type { Intent, PageType } from "./types";
 
 /**
@@ -437,7 +437,7 @@ async function buildLlmClusters(rows: NormRow[]): Promise<DraftCluster[] | null>
       const batch = sorted.slice(start, start + LLM_BATCH_SIZE);
       const byId = new Map(batch.map((row) => [row.id, row]));
       const response = await chatJson<LlmClusterResponse>({
-        model: MODELS.cluster,
+        modelSlot: "cluster",
         system:
           "Ты SEO-аналитик для сайта аренды спецтехники. Разбей поисковые запросы на смысловые кластеры уровня одной страницы или одной статьи. Не делай общий кластер 'спецтехника', если внутри есть разные темы: аренда, цена, ремонт, продажа, документы, виды техники, конкретные машины, маркетплейсы, вопросы. Коммерческие, информационные и сравнительные запросы не смешивай. Верни JSON: {\"clusters\":[{\"key\":\"latin-kebab-key\",\"name\":\"короткое название\",\"ids\":[1,2]}]}. Каждый id должен быть ровно в одном кластере.",
         user: JSON.stringify({
@@ -520,7 +520,7 @@ function consolidateDraftClusters(clusters: DraftCluster[]): DraftCluster[] {
 
 async function nameCluster(primaryKeyword: string, intent: Intent, samples: string[]): Promise<string> {
   const llm = await chatJson<{ name: string }>({
-    model: MODELS.cheap,
+    modelSlot: "cheap",
     system:
       "Ты SEO-аналитик. Придумай короткое человекочитаемое название кластера поисковых запросов на русском (3-6 слов). Это НЕ заголовок страницы, а внутренняя метка смысла группы. Ответь строго JSON: {\"name\": \"...\"}.",
     user: `Интент: ${intent}\nГлавный запрос: ${primaryKeyword}\nПримеры запросов:\n${samples.slice(0, 12).join("\n")}`,
@@ -677,7 +677,7 @@ export async function clusterize(options: ClusterizeOptions = {}): Promise<Clust
   if (options.requireEmbeddings) {
     const detail = getLastEmbeddingError();
     throw new Error(
-      `Embedding-кластеризация недоступна для ${MODELS.embedding}. ${detail ?? "Проверьте доступ OPENAI_API_KEY к OPENAI_MODEL_EMBEDDING."}`,
+      `Embedding-кластеризация недоступна. ${detail ?? "Проверьте доступ OPENAI_API_KEY к OPENAI_MODEL_EMBEDDING."}`,
     );
   }
 

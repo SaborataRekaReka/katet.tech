@@ -2,10 +2,29 @@ import { createHash, createHmac } from "node:crypto";
 import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
 
+const DIRECTUS_INTERNAL_URL =
+  process.env.DIRECTUS_INTERNAL_URL?.trim() ||
+  process.env.DIRECTUS_URL?.trim() ||
+  process.env.NEXT_PUBLIC_DIRECTUS_URL?.trim() ||
+  (process.env.NODE_ENV !== "production" ? "http://localhost:8055" : "");
+const DIRECTUS_LEADS_COLLECTION = process.env.DIRECTUS_LEADS_COLLECTION?.trim() || "leads";
+const DIRECTUS_LEADS_TOKEN =
+  process.env.DIRECTUS_LEADS_TOKEN?.trim() ||
+  process.env.DIRECTUS_API_TOKEN?.trim() ||
+  process.env.DIRECTUS_TOKEN?.trim() ||
+  "";
+const DIRECTUS_WRITE_TIMEOUT_MS = Number.parseInt(process.env.DIRECTUS_WRITE_TIMEOUT_MS || "10000", 10);
+
 const CRM_SITE_INGEST_URL = process.env.CRM_SITE_INGEST_URL?.trim() || "";
 const CRM_SITE_SECRET = process.env.CRM_SITE_SECRET?.trim() || "";
 const CRM_SITE_EXTERNAL_ID_PREFIX = process.env.CRM_SITE_EXTERNAL_ID_PREFIX?.trim() || "katet.tech";
 const CRM_SITE_ALLOW_UNSIGNED = (process.env.CRM_SITE_ALLOW_UNSIGNED || "").toLowerCase() === "true";
+
+type IngestResult = {
+  ok: boolean;
+  skipped: boolean;
+  reason: string | null;
+};
 
 type LeadFields = {
   phone: string;
@@ -34,6 +53,20 @@ function stableSerialize(value: unknown): string {
 
 function toJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function directusItemsUrl() {
+  if (!DIRECTUS_INTERNAL_URL) return "";
+  const baseUrl = DIRECTUS_INTERNAL_URL.replace(/\/$/, "");
+  return `${baseUrl}/items/${encodeURIComponent(DIRECTUS_LEADS_COLLECTION)}`;
+}
+
+function directusWriteTimeoutMs() {
+  if (!Number.isFinite(DIRECTUS_WRITE_TIMEOUT_MS) || DIRECTUS_WRITE_TIMEOUT_MS < 1000) {
+    return 10000;
+  }
+
+  return DIRECTUS_WRITE_TIMEOUT_MS;
 }
 
 function textField(formData: FormData, ...keys: string[]) {
@@ -189,6 +222,104 @@ async function forwardLeadToCrm(fields: LeadFields) {
   }
 }
 
+async function storeLeadInDirectus(fields: LeadFields, payload: Record<string, unknown>): Promise<IngestResult> {
+  const itemsUrl = directusItemsUrl();
+  if (!itemsUrl) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Directus URL is not configured (set DIRECTUS_INTERNAL_URL or NEXT_PUBLIC_DIRECTUS_URL)",
+    };
+  }
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+
+  if (DIRECTUS_LEADS_TOKEN) {
+    headers.authorization = `Bearer ${DIRECTUS_LEADS_TOKEN}`;
+  }
+
+  const body = toJsonValue({
+    status: "new",
+    source_path: fields.sourcePath,
+    form_name: fields.formName || "Сайт",
+    name: fields.name || null,
+    phone: fields.phone,
+    email: fields.email || null,
+    message: fields.message || null,
+    payload,
+  });
+
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), directusWriteTimeoutMs());
+
+  try {
+    const response = await fetch(itemsUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: abortController.signal,
+    });
+
+    const responseText = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        skipped: false,
+        reason: `Directus ${response.status}: ${responseText.slice(0, 400)}`,
+      };
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      reason: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      reason: error instanceof Error ? error.message : "Unknown Directus write error",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function storeLeadInDatabase(fields: LeadFields, payload: Record<string, unknown>): Promise<IngestResult> {
+  try {
+    await query(
+      `
+        INSERT INTO leads (source_path, form_name, name, phone, email, message, payload)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+      `,
+      [
+        fields.sourcePath,
+        fields.formName || "Сайт",
+        fields.name || null,
+        fields.phone,
+        fields.email || null,
+        fields.message || null,
+        JSON.stringify(payload),
+      ],
+    );
+
+    return {
+      ok: true,
+      skipped: false,
+      reason: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      reason: error instanceof Error ? error.message : "Unknown PostgreSQL write error",
+    };
+  }
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const referer = request.headers.get("referer") || null;
@@ -204,27 +335,46 @@ export async function POST(request: Request) {
       });
     }
 
-    await query(
-      `
-        INSERT INTO leads (source_path, form_name, name, phone, email, message, payload)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-      `,
-      [
-        lead.sourcePath,
-        lead.formName || "Сайт",
-        lead.name || null,
-        lead.phone,
-        lead.email || null,
-        lead.message || null,
-        JSON.stringify({
-          ...lead.payload,
-          crm_forwarded: crmForwarding.ok,
-          crm_skipped: crmForwarding.skipped,
-          crm_reason: crmForwarding.reason,
-          crm_target: CRM_SITE_INGEST_URL || null,
-        }),
-      ],
-    );
+    const basePayload: Record<string, unknown> = {
+      ...lead.payload,
+      crm_forwarded: crmForwarding.ok,
+      crm_skipped: crmForwarding.skipped,
+      crm_reason: crmForwarding.reason,
+      crm_target: CRM_SITE_INGEST_URL || null,
+    };
+
+    const directusWrite = await storeLeadInDirectus(lead, {
+      ...basePayload,
+      lead_sink: "directus_api",
+      directus_target: DIRECTUS_INTERNAL_URL || null,
+      directus_collection: DIRECTUS_LEADS_COLLECTION,
+    });
+
+    if (!directusWrite.ok) {
+      const dbFallbackWrite = await storeLeadInDatabase(lead, {
+        ...basePayload,
+        lead_sink: "postgres_fallback",
+        directus_write_error: directusWrite.reason,
+        directus_target: DIRECTUS_INTERNAL_URL || null,
+        directus_collection: DIRECTUS_LEADS_COLLECTION,
+      });
+
+      if (!dbFallbackWrite.ok) {
+        console.error("Lead persistence failed", {
+          formName: lead.formName,
+          sourcePath: lead.sourcePath,
+          directusWriteError: directusWrite.reason,
+          dbFallbackWriteError: dbFallbackWrite.reason,
+        });
+        throw new Error("Lead persistence failed");
+      }
+
+      console.warn("Lead stored via PostgreSQL fallback", {
+        formName: lead.formName,
+        sourcePath: lead.sourcePath,
+        reason: directusWrite.reason,
+      });
+    }
   }
 
   redirect("/thankyou/");

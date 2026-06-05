@@ -56,7 +56,14 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const denied = await guard(request);
   if (denied) return denied;
-  const id = new URL(request.url).searchParams.get("id");
+  const params = new URL(request.url).searchParams;
+  const clearAll = params.get("all");
+  if (clearAll === "1" || clearAll === "true") {
+    const deleted = await run<{ id: number }>(`DELETE FROM seo.company_context RETURNING id`);
+    return NextResponse.json({ ok: true, all: true, deleted: deleted.length });
+  }
+
+  const id = params.get("id");
   if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
   await run(`DELETE FROM seo.company_context WHERE id = $1`, [Number(id)]);
   return NextResponse.json({ ok: true });

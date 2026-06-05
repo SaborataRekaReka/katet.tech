@@ -5,6 +5,65 @@
   font-family: var(--font-body, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
 }
 
+.moduleRoot {
+  display: grid;
+  gap: 14px;
+}
+
+.moduleHeader {
+  border: 1px solid #dce3ef;
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.moduleTitle {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.moduleLead {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #5b6472;
+}
+
+.moduleActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.moduleAction {
+  border: 1px solid #d6dbe6;
+  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  text-decoration: none;
+  background: #fff;
+}
+
+.moduleAction:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.moduleTabsWrap {
+  border: 1px solid #dce3ef;
+  border-radius: 14px;
+  background: #fff;
+  padding: 8px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -25,26 +84,30 @@
 
 .nav {
   display: flex;
-  gap: 4px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .navLink {
-  color: #c7ced8;
+  color: #334155;
   text-decoration: none;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid #d6dbe6;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
 }
 
 .navLink:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  border-color: #2563eb;
+  color: #1d4ed8;
 }
 
 .container {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 28px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 .h1 {
@@ -271,8 +334,9 @@
 /* ---- Redesign: tabs, toolbar, selectable tables, pills ---- */
 
 .navLinkActive {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .pageHead {

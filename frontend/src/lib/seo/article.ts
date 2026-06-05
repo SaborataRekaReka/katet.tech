@@ -3,7 +3,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { one, run } from "./db";
-import { chatJson, generateImage, MODELS } from "./openai";
+import { chatJson, generateImage, getLastChatError } from "./openai";
 import type { ContentBrief, GeneratedArticle } from "./types";
 
 /**
@@ -105,6 +105,26 @@ function paragraphCount(bodyHtml: string): number {
   return (bodyHtml.match(/<p\b/gi) || []).length;
 }
 
+function htmlToText(bodyHtml: string): string {
+  return bodyHtml
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function meaningfulParagraphCount(bodyHtml: string, minChars = 40): number {
+  const matches = [...bodyHtml.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)];
+  return matches.filter((match) => htmlToText(asText(match[1])).length >= minChars).length;
+}
+
+function isMeaningfulArticleBody(bodyHtml: string): boolean {
+  const textLength = htmlToText(bodyHtml).length;
+  const richParagraphs = meaningfulParagraphCount(bodyHtml, 40);
+  return textLength >= 700 && richParagraphs >= 4;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -159,7 +179,7 @@ async function buildImagePlan(brief: ContentBrief, article: GeneratedArticle): P
   const paragraphTotal = paragraphCount(article.body_html);
   const planned = Math.max(1, Math.min(4, Math.floor(paragraphTotal / 3)));
   const llm = await chatJson<ImagePlanResponse>({
-    model: MODELS.cheap,
+    modelSlot: "cheap",
     system:
       "Ты редактор SEO-статьи. Верни JSON: { placements: [{ anchor_h2, prompt, alt }] }. " +
       "Нужно 1-4 изображения по смысловым разделам статьи. prompt на русском, конкретный и безопасный. " +
@@ -237,12 +257,13 @@ export async function generateArticle(planItemId: number): Promise<number> {
   if (!plan) throw new Error(`Plan item ${planItemId} not found`);
 
   const brief = briefRow.brief;
+  const allowFallback = process.env.SEO_ALLOW_ARTICLE_FALLBACK === "1";
   let article = fallbackArticle(brief);
 
   const llm = await chatJson<GeneratedArticle>({
-    model: MODELS.strong,
+    modelSlot: "strong",
     temperature: 0.5,
-    maxTokens: 3000,
+    maxTokens: 7000,
     system:
       "Ты опытный SEO-копирайтер. Напиши черновик страницы для сайта на русском СТРОГО по переданному ТЗ. " +
       "Используй только факты из source_facts ТЗ. Не выдумывай цены, характеристики, районы, сроки и кейсы. " +
@@ -253,7 +274,7 @@ export async function generateArticle(planItemId: number): Promise<number> {
   });
   if (llm && llm.title && llm.body_html) {
     const title = asText(llm.title);
-    article = {
+    const candidate: GeneratedArticle = {
       title,
       slug: llm.slug ? slugify(llm.slug) : slugify(title),
       seo_title: asText(llm.seo_title) || title,
@@ -264,6 +285,21 @@ export async function generateArticle(planItemId: number): Promise<number> {
         ? llm.faq.map((f) => ({ question: asText(f?.question), answer: asText(f?.answer) }))
         : [],
     };
+    if (isMeaningfulArticleBody(candidate.body_html)) {
+      article = candidate;
+    } else if (!allowFallback) {
+      throw new Error(
+        "Генерация вернула слишком короткий или шаблонный текст. " +
+          "Проверьте промпт/контекст и повторите запуск. Для аварийного режима можно включить SEO_ALLOW_ARTICLE_FALLBACK=1.",
+      );
+    }
+  } else if (!allowFallback) {
+    const reason = getLastChatError();
+    throw new Error(
+      `Не удалось сгенерировать текст статьи через LLM${reason ? `: ${reason}` : ""}. ` +
+        "Проверьте OPENAI_MODEL_STRONG, квоту и доступ к модели. " +
+        "Для аварийного режима можно включить SEO_ALLOW_ARTICLE_FALLBACK=1.",
+    );
   }
 
   article.body_html = await generateAndInsertImages(article, brief);

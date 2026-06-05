@@ -51,7 +51,7 @@ npm --prefix .\frontend run check:env
 - `/zapros/{slug}/` redirects to `/arenda_spetstekhniki/` because the legacy `zapros` taxonomy is not a public content entity anymore
 - `/robots.txt`
 - `/sitemap.xml`
-- `/api/leads/` for lead form submission into the Directus `leads` table
+- `/api/leads/` for lead form submission into Directus collection `leads` (Items API with PostgreSQL fallback)
 
 ## Validation
 
@@ -85,5 +85,51 @@ Current local result: `351/351` inventory URLs return `200`.
 - `next.config.ts` enables `dangerouslyAllowLocalIP` so Next Image can optimize local Directus assets from `localhost:8055`.
 - Directus public read permissions must be applied with `directus/schema/005_public_read_permissions.sql`; restart Directus after applying direct SQL permission changes.
 - HTML content is rewritten server-side from legacy `/wp-content/uploads/...` URLs to imported Directus `/assets/{id}` URLs when a matching `media_assets.source_path` exists.
-- Lead forms submit to `/api/leads/`, insert into the Directus/PostgreSQL `leads` table, then redirect to `/thankyou/`.
+- Lead forms submit to `/api/leads/`, API tries Directus `POST /items/leads` first (with `DIRECTUS_LEADS_TOKEN`), falls back to PostgreSQL insert if Directus write fails, then redirects to `/thankyou/`.
 - Visual implementation intentionally follows the current Elementor hierarchy first. Pixel-perfect Elementor inline sections are still a follow-up migration layer.
+
+## Directus Page Blocks (MVP)
+
+Static pages rendered via `/{slug}/` can use `pages.content_blocks` in Directus.
+If blocks are present, frontend renders them instead of `pages.body`.
+
+Supported block types:
+
+- `rich_text` (`text`, `html`, `wysiwyg` aliases)
+- `cta` (`call_to_action` alias)
+- `notice` (`alert`, `info` aliases)
+- `checklist` (`list`, `bullets` aliases)
+
+Minimal example for `pages.content_blocks`:
+
+```json
+[
+  {
+    "type": "rich_text",
+    "title": "How we work",
+    "html": "<p>We deliver equipment with operators in Moscow and region.</p>"
+  },
+  {
+    "type": "checklist",
+    "title": "What is included",
+    "items": [
+      "Equipment with operator",
+      "Delivery to site",
+      "Flexible shift scheduling"
+    ]
+  },
+  {
+    "type": "cta",
+    "title": "Need a quick estimate?",
+    "description": "Send a request and manager will call back.",
+    "button_text": "Request a callback",
+    "button_href": "/#lead",
+    "button_variant": "accent"
+  }
+]
+```
+
+Optional control fields:
+
+- `enabled` / `is_enabled`: set `false` to hide a block without deleting it.
+- `type` can be defined via `type`, `kind`, `component`, `block`, `_type`.

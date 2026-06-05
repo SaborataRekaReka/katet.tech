@@ -10,6 +10,7 @@ import { ActionLink } from "@/components/ui/Button";
 import { ContactLink } from "@/components/ui/ContactLinks";
 import { CalendarIcon, ClockIcon, ListIcon, MailIcon, PhoneCallIcon, PinIcon, TelegramIcon, WhatsAppIcon } from "@/components/ui/icons";
 import { AboutAccordionPageView } from "./AboutAccordionPageView";
+import { DirectusPageBlocks, parseDirectusPageBlocks } from "./DirectusPageBlocks";
 import { DeliveryPaymentPageView } from "./DeliveryPaymentPageView";
 import { SeoArticleSection } from "./SeoArticleSection";
 import { normalizeImportedBody } from "./importedHtml";
@@ -412,6 +413,8 @@ export function ContentPageView({
   const lead = record.meta_description || excerptFromHtml(record.body, record.excerpt, 220);
   const isCityLanding = /^\/arenda-specztehniki-v-[^/]+\/$/iu.test(record.url_path || "");
   const bodyHtml = cleanPageBody(record);
+  const directusBlocks = parseDirectusPageBlocks(record.content_blocks);
+  const hasDirectusBlocks = directusBlocks.length > 0;
   const citySeo = isCityLanding ? splitCityLandingSeoHtml(bodyHtml || record.body || record.excerpt || "") : null;
 
   return (
@@ -448,7 +451,7 @@ export function ContentPageView({
             <article className="static-template__main">
               <h2 className="static-template__main-title">{record.title}</h2>
               {lead ? <p className="article-lead">{lead}</p> : null}
-              <div className="content content--wide" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+              {hasDirectusBlocks ? <DirectusPageBlocks blocks={directusBlocks} /> : <div className="content content--wide" dangerouslySetInnerHTML={{ __html: bodyHtml }} />}
             </article>
             <aside className="static-template__side">
               <h2>Катет</h2>

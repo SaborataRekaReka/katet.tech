@@ -1140,6 +1140,9 @@ export async function getBlogCategories(limit = 10) {
 export async function getSitemapPaths() {
   const withCategories = await hasBlogCategoryTables();
 
+  const sitemapUpdatedAtExpr = (alias: string) =>
+    `COALESCE(to_jsonb(${alias})->>'wp_updated_at', to_jsonb(${alias})->>'updated_at', to_jsonb(${alias})->>'migrated_at')`;
+
   const excludedPaths = new Set([
     "/arenda/arenda-avtovishek-v-moskve/",
     "/arenda/arenda-podemnikov-v-moskve/",
@@ -1164,17 +1167,34 @@ export async function getSitemapPaths() {
   ];
 
   const categoriesUnion = withCategories
-    ? "UNION ALL SELECT url_path, updated_at::text FROM categories WHERE url_path IS NOT NULL"
+    ? `UNION ALL SELECT c.url_path, ${sitemapUpdatedAtExpr("c")} AS updated_at FROM categories c WHERE c.url_path IS NOT NULL`
     : "";
 
   const paths = await query<{ url_path: string; updated_at: string | null }>(
     `
-      SELECT url_path, wp_updated_at::text AS updated_at FROM pages WHERE status = 'publish' AND url_path IS NOT NULL
-      UNION ALL SELECT url_path, wp_updated_at::text FROM posts WHERE status = 'publish' AND url_path IS NOT NULL
-      UNION ALL SELECT url_path, wp_updated_at::text FROM equipment_items WHERE status = 'publish' AND url_path IS NOT NULL
-      UNION ALL SELECT url_path, migrated_at::text FROM equipment_types WHERE url_path IS NOT NULL
-      UNION ALL SELECT url_path, migrated_at::text FROM brands WHERE url_path IS NOT NULL
-      UNION ALL SELECT url_path, migrated_at::text FROM work_types WHERE url_path IS NOT NULL
+      SELECT p.url_path, ${sitemapUpdatedAtExpr("p")} AS updated_at
+      FROM pages p
+      WHERE p.status = 'publish' AND p.url_path IS NOT NULL
+      UNION ALL
+      SELECT p.url_path, ${sitemapUpdatedAtExpr("p")} AS updated_at
+      FROM posts p
+      WHERE p.status = 'publish' AND p.url_path IS NOT NULL
+      UNION ALL
+      SELECT e.url_path, ${sitemapUpdatedAtExpr("e")} AS updated_at
+      FROM equipment_items e
+      WHERE e.status = 'publish' AND e.url_path IS NOT NULL
+      UNION ALL
+      SELECT t.url_path, ${sitemapUpdatedAtExpr("t")} AS updated_at
+      FROM equipment_types t
+      WHERE t.url_path IS NOT NULL
+      UNION ALL
+      SELECT b.url_path, ${sitemapUpdatedAtExpr("b")} AS updated_at
+      FROM brands b
+      WHERE b.url_path IS NOT NULL
+      UNION ALL
+      SELECT w.url_path, ${sitemapUpdatedAtExpr("w")} AS updated_at
+      FROM work_types w
+      WHERE w.url_path IS NOT NULL
       ${categoriesUnion}
       ORDER BY url_path
     `,

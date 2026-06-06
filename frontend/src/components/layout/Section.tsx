@@ -1,7 +1,12 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
-export function Section({ className = "section", children }: { className?: string; children: ReactNode }) {
-  return <section className={className}>{children}</section>;
+type SectionProps = HTMLAttributes<HTMLElement> & {
+  className?: string;
+  children: ReactNode;
+};
+
+export function Section({ className = "section", children, ...props }: SectionProps) {
+  return <section className={className} {...props}>{children}</section>;
 }
 
 export function SectionHeader({

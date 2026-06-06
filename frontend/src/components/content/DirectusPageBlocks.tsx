@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { ActionLink, type ButtonVariant } from "@/components/ui/Button";
 import { stripHtml } from "@/lib/format";
 
@@ -254,10 +255,14 @@ export function parseDirectusPageBlocks(rawBlocks: unknown): DirectusPageBlock[]
     .filter((entry): entry is DirectusPageBlock => entry !== null);
 }
 
-function renderBlock(block: DirectusPageBlock): ReactNode {
+function renderBlock(block: DirectusPageBlock, collection?: string, itemId?: string | number): ReactNode {
+  const directusAttr = collection
+    ? toDirectusVisualAttr({ collection, item: itemId, fields: "content_blocks", mode: "drawer" })
+    : undefined;
+
   if (block.type === "rich_text") {
     return (
-      <section className="directus-block directus-block--rich-text" key={block.id}>
+      <section className="directus-block directus-block--rich-text" key={block.id} data-directus={directusAttr}>
         {block.eyebrow ? <p className="directus-block__eyebrow">{block.eyebrow}</p> : null}
         {block.title ? <h3 className="directus-block__title">{block.title}</h3> : null}
         <div className="content content--wide directus-block__content" dangerouslySetInnerHTML={{ __html: block.html }} />
@@ -267,7 +272,7 @@ function renderBlock(block: DirectusPageBlock): ReactNode {
 
   if (block.type === "cta") {
     return (
-      <section className="directus-block directus-block--cta" key={block.id}>
+      <section className="directus-block directus-block--cta" key={block.id} data-directus={directusAttr}>
         <div className="directus-block__cta-inner">
           {block.title ? <h3 className="directus-block__title">{block.title}</h3> : null}
           {block.description ? <p className="directus-block__description">{block.description}</p> : null}
@@ -281,7 +286,7 @@ function renderBlock(block: DirectusPageBlock): ReactNode {
 
   if (block.type === "notice") {
     return (
-      <section className={`directus-block directus-block--notice directus-block--notice-${block.tone}`} key={block.id}>
+      <section className={`directus-block directus-block--notice directus-block--notice-${block.tone}`} key={block.id} data-directus={directusAttr}>
         {block.title ? <h3 className="directus-block__title">{block.title}</h3> : null}
         <p className="directus-block__description">{block.text}</p>
       </section>
@@ -289,7 +294,7 @@ function renderBlock(block: DirectusPageBlock): ReactNode {
   }
 
   return (
-    <section className="directus-block directus-block--checklist" key={block.id}>
+    <section className="directus-block directus-block--checklist" key={block.id} data-directus={directusAttr}>
       {block.title ? <h3 className="directus-block__title">{block.title}</h3> : null}
       <ul className="directus-block__list">
         {block.items.map((item, index) => (
@@ -300,8 +305,8 @@ function renderBlock(block: DirectusPageBlock): ReactNode {
   );
 }
 
-export function DirectusPageBlocks({ blocks }: { blocks: DirectusPageBlock[] }) {
+export function DirectusPageBlocks({ blocks, collection, itemId }: { blocks: DirectusPageBlock[]; collection?: string; itemId?: string | number }) {
   if (!blocks.length) return null;
 
-  return <div className="directus-blocks">{blocks.map((block) => renderBlock(block))}</div>;
+  return <div className="directus-blocks">{blocks.map((block) => renderBlock(block, collection, itemId))}</div>;
 }

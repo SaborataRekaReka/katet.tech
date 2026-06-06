@@ -21,6 +21,7 @@ import { HeroLead } from "@/components/marketing/HeroLead";
 import { TaxonomyShowcase } from "@/components/taxonomy/TaxonomyShowcase";
 import { Badge } from "@/components/ui/Badge";
 import { ActionLink } from "@/components/ui/Button";
+import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { assetUrl, excerptFromHtml, formatPrice, stripHtml } from "@/lib/format";
 import {
   workTypeIllustrationByUrlPath,
@@ -63,6 +64,12 @@ export function LeadForm({ compact = false }: { compact?: boolean }) {
 }
 
 type TaxonomyLandingVariant = "equipment" | "work" | "brand";
+
+function taxonomyCollectionForVariant(variant: TaxonomyLandingVariant) {
+  if (variant === "work") return "work_types";
+  if (variant === "brand") return "brands";
+  return "equipment_types";
+}
 
 type DetailSpecEntry = {
   id: string;
@@ -192,6 +199,21 @@ function TaxonomyLandingTemplate({
   const breadcrumbs = isWorkPage
     ? [{ label: "Главная", href: "/" }, { label: "Услуги спецтехники", href: "/tipy-rabot/" }, { label: page.name }]
     : [{ label: "Главная", href: "/" }, { label: "Каталог спецтехники", href: "/arenda/" }, { label: page.name }];
+  const collection = taxonomyCollectionForVariant(variant);
+  const heroRootDirectus = toDirectusVisualAttr({
+    collection,
+    item: page.id,
+    fields: ["name", "description", "meta_description", "hero_file_id"],
+    mode: "drawer",
+  });
+  const titleDirectus = toDirectusVisualAttr({ collection, item: page.id, fields: "name", mode: "popover" });
+  const descriptionDirectus = toDirectusVisualAttr({
+    collection,
+    item: page.id,
+    fields: ["description", "meta_description"],
+    mode: "popover",
+  });
+  const bodyDirectus = toDirectusVisualAttr({ collection, item: page.id, fields: "body", mode: "drawer" });
 
   return (
     <div className={isWorkPage ? "archive-landing global-catalog-landing dispatcher-header-page work-landing" : "archive-landing global-catalog-landing dispatcher-header-page"}>
@@ -206,6 +228,9 @@ function TaxonomyLandingTemplate({
         showDescription={!isWorkPage && !isKamazCranePage}
         showOrderForm={!isWorkPage}
         layout="mainLike"
+        rootDataDirectus={heroRootDirectus}
+        titleDataDirectus={titleDirectus}
+        descriptionDataDirectus={descriptionDirectus}
       />
       <HomeAdvantages />
       <EquipmentGrid
@@ -217,13 +242,30 @@ function TaxonomyLandingTemplate({
         filterKeys={variant === "equipment" ? page.filter_keys : null}
         consultationAfter={isKamazCranePage ? 3 : undefined}
       />
-      <SeoArticleSection title={archiveSeoTitle} html={page.body || page.description} wide />
+      <div data-directus={bodyDirectus}>
+        <SeoArticleSection title={archiveSeoTitle} html={page.body || page.description} wide />
+      </div>
     </div>
   );
 }
 
 function BrandLandingPage({ page, equipment }: { page: TaxonomyPageRecord; equipment: EquipmentCardRecord[] }) {
   const summaryText = stripHtml(page.meta_description || page.description) || "Техника бренда доступна для аренды с экипажем по Москве и Московской области.";
+  const collection = taxonomyCollectionForVariant("brand");
+  const heroRootDirectus = toDirectusVisualAttr({
+    collection,
+    item: page.id,
+    fields: ["name", "description", "meta_description", "hero_file_id"],
+    mode: "drawer",
+  });
+  const titleDirectus = toDirectusVisualAttr({ collection, item: page.id, fields: "name", mode: "popover" });
+  const descriptionDirectus = toDirectusVisualAttr({
+    collection,
+    item: page.id,
+    fields: ["description", "meta_description"],
+    mode: "popover",
+  });
+  const bodyDirectus = toDirectusVisualAttr({ collection, item: page.id, fields: "body", mode: "drawer" });
 
   return (
     <div className="archive-landing global-catalog-landing dispatcher-header-page brand-landing">
@@ -235,18 +277,23 @@ function BrandLandingPage({ page, equipment }: { page: TaxonomyPageRecord; equip
         imageSrc="/assets/katet/archive/archive-hero-crane.jpg"
         breadcrumbs={[{ label: "Главная", href: "/" }, { label: "Бренды спецтехники", href: "/brand/" }, { label: page.name }]}
         layout="mainLike"
+        rootDataDirectus={heroRootDirectus}
+        titleDataDirectus={titleDirectus}
+        descriptionDataDirectus={descriptionDirectus}
       />
-      <section className="brand-landing__summary">
+      <section className="brand-landing__summary" data-directus={descriptionDirectus}>
         <div className="container brand-landing__summary-inner">
           <div className="brand-landing__mark" aria-hidden="true" />
           <div>
-            <h2>{page.name}</h2>
-            <p>{summaryText}</p>
+            <h2 data-directus={titleDirectus}>{page.name}</h2>
+            <p data-directus={descriptionDirectus}>{summaryText}</p>
           </div>
         </div>
       </section>
       <EquipmentGrid title="Каталог техники" items={equipment} variant="archive" showEyebrow={false} />
-      <SeoArticleSection title={page.name} html={page.body || page.description} wide />
+      <div data-directus={bodyDirectus}>
+        <SeoArticleSection title={page.name} html={page.body || page.description} wide />
+      </div>
     </div>
   );
 }
@@ -256,6 +303,18 @@ export function EquipmentDetail({ item }: { item: EquipmentItemRecord }) {
   const excerpt = excerptFromHtml(item.body, item.excerpt, 260) || "Техника доступна для аренды с экипажем по Москве и области.";
   const specs = item.specs.map(detailSpecValue);
   const hourlyPrice = detailHourlyPrice(item);
+  const collection = "equipment_items";
+  const heroRootDirectus = toDirectusVisualAttr({
+    collection,
+    item: item.id,
+    fields: ["title", "excerpt", "body", "featured_file_id"],
+    mode: "drawer",
+  });
+  const titleDirectus = toDirectusVisualAttr({ collection, item: item.id, fields: "title", mode: "popover" });
+  const descriptionDirectus = toDirectusVisualAttr({ collection, item: item.id, fields: ["excerpt", "body"], mode: "modal" });
+  const specsDirectus = toDirectusVisualAttr({ collection, item: item.id, fields: "specs", mode: "drawer" });
+  const priceDirectus = toDirectusVisualAttr({ collection, item: item.id, fields: ["price_raw", "price_amount", "hours_per_shift"], mode: "popover" });
+  const bodyDirectus = toDirectusVisualAttr({ collection, item: item.id, fields: "body", mode: "drawer" });
 
   return (
     <div className="archive-landing global-catalog-landing dispatcher-header-page equipment-detail-template">
@@ -268,13 +327,16 @@ export function EquipmentDetail({ item }: { item: EquipmentItemRecord }) {
         sideImage={src ? { src, alt: item.image?.title || item.title } : null}
         showOrderForm={false}
         layout="mainLike"
+        rootDataDirectus={heroRootDirectus}
+        titleDataDirectus={titleDirectus}
+        descriptionDataDirectus={descriptionDirectus}
       />
       <section className="equipment-detail-page">
         <div className="container">
           <div className="equipment-detail-template__top">
             <div className="equipment-detail-template__meta" aria-label="Описание и параметры">
-              <section className="equipment-detail-template__specs" aria-labelledby="detail-specs-title">
-                <h2 id="detail-specs-title">Характеристики</h2>
+              <section className="equipment-detail-template__specs" aria-labelledby="detail-specs-title" data-directus={specsDirectus}>
+                <h2 id="detail-specs-title" data-directus={specsDirectus}>Характеристики</h2>
                 {specs.length ? (
                   <ul>
                     {specs.map((spec) => (
@@ -295,13 +357,13 @@ export function EquipmentDetail({ item }: { item: EquipmentItemRecord }) {
               </section>
             </div>
 
-            <aside className="equipment-detail-template__offer" aria-label="Стоимость аренды">
+            <aside className="equipment-detail-template__offer" aria-label="Стоимость аренды" data-directus={priceDirectus}>
               <div className="equipment-detail-template__price-wrap">
-                <div className="equipment-detail-template__price">{detailShiftPrice(item)}</div>
-                {hourlyPrice ? <p className="equipment-detail-template__subprice">{hourlyPrice}</p> : null}
+                <div className="equipment-detail-template__price" data-directus={priceDirectus}>{detailShiftPrice(item)}</div>
+                {hourlyPrice ? <p className="equipment-detail-template__subprice" data-directus={priceDirectus}>{hourlyPrice}</p> : null}
               </div>
               <Badge className="equipment-detail-template__stock" tone="success">Есть в наличии</Badge>
-              <p>{excerpt}</p>
+              <p data-directus={descriptionDirectus}>{excerpt}</p>
               <div className="equipment-detail-template__delivery-note">Доставка от 60 минут</div>
               <ActionLink
                 className="equipment-detail-template__button"
@@ -364,7 +426,9 @@ export function EquipmentDetail({ item }: { item: EquipmentItemRecord }) {
         </div>
       </section>
 
-      <SeoContent title="О транспорте" html={item.body} wide />
+      <div data-directus={bodyDirectus}>
+        <SeoContent title="О транспорте" html={item.body} wide />
+      </div>
       <HomeAdvantages />
     </div>
   );

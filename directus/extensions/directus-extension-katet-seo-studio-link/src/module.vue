@@ -1103,11 +1103,21 @@ const actionLabels = {
   manual_review: "Ручная проверка",
 };
 
-const bridgeBase = "/directus-extension-katet-seo-pipeline";
-const directusPostsUrl = "/admin/content/posts";
+function getDirectusBasePath() {
+  if (typeof window === "undefined") return "";
+  const path = window.location.pathname || "";
+  const adminMarker = "/admin";
+  const adminIndex = path.indexOf(adminMarker);
+  if (adminIndex > 0) return path.slice(0, adminIndex);
+  return "";
+}
+
+const directusBasePath = getDirectusBasePath();
+const bridgeBase = `${directusBasePath}/directus-extension-katet-seo-pipeline`;
+const directusPostsUrl = `${directusBasePath}/admin/content/posts`;
 
 function directusPostUrl(id) {
-  return `/admin/content/posts/${id}`;
+  return `${directusBasePath}/admin/content/posts/${id}`;
 }
 
 const activeTab = ref("overview");

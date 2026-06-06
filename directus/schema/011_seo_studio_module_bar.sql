@@ -1,11 +1,12 @@
--- Enables custom Directus module 'katet-seo-studio-link' in the module bar.
--- Safe to re-run: always rewrites module_bar to the intended defaults + SEO Studio link.
+-- Enables Directus modules for SEO Studio + Visual Editor in the module bar.
+-- Also sets default project_url for Visual Editor if it is empty.
+-- Safe to re-run: always rewrites module_bar to intended defaults.
 
 UPDATE directus_settings
 SET module_bar =
   '[
     {"type":"module","id":"content","enabled":true},
-    {"type":"module","id":"visual","enabled":false},
+    {"type":"module","id":"visual","enabled":true},
     {"type":"module","id":"users","enabled":true},
     {"type":"module","id":"files","enabled":true},
     {"type":"module","id":"insights","enabled":true},
@@ -13,5 +14,9 @@ SET module_bar =
     {"type":"module","id":"deployments","enabled":false},
     {"type":"link","id":"docs","enabled":true,"name":"$t:documentation","icon":"help","url":"https://docs.directus.io"},
     {"type":"module","id":"settings","enabled":true,"locked":true}
-  ]'::json
+  ]'::json,
+  project_url = CASE
+    WHEN project_url IS NULL OR btrim(project_url) = '' THEN 'https://katet.tech'
+    ELSE project_url
+  END
 WHERE id = 1;

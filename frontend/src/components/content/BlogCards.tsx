@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { RichPage } from "@/lib/content";
+import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { assetUrl, excerptFromHtml } from "@/lib/format";
 import { Section, SectionHeader } from "@/components/layout/Section";
 
@@ -13,9 +14,18 @@ export function BlogCards({ title, posts }: { title: string; posts: RichPage[] }
       <div className="container blog-grid">
         {posts.map((post) => {
           const src = assetUrl(post.image);
+          const rootDirectus = toDirectusVisualAttr({
+            collection: "posts",
+            item: post.id,
+            fields: ["title", "excerpt", "meta_description", "featured_file_id"],
+            mode: "drawer",
+          });
+          const titleDirectus = toDirectusVisualAttr({ collection: "posts", item: post.id, fields: "title", mode: "popover" });
+          const bodyDirectus = toDirectusVisualAttr({ collection: "posts", item: post.id, fields: ["excerpt", "body"], mode: "modal" });
+
           return (
-            <article className="blog-card" key={post.id}>
-              <Link className="blog-card__image u-pos-rel" href={post.url_path}>
+            <article className="blog-card" key={post.id} data-directus={rootDirectus}>
+              <Link className="blog-card__image u-pos-rel" href={post.url_path} data-directus={rootDirectus}>
                 {src ? (
                   <Image
                     src={src}
@@ -28,9 +38,9 @@ export function BlogCards({ title, posts }: { title: string; posts: RichPage[] }
               </Link>
               <div>
                 <h3>
-                  <Link href={post.url_path}>{post.title}</Link>
+                  <Link href={post.url_path} data-directus={titleDirectus}>{post.title}</Link>
                 </h3>
-                <p>{excerptFromHtml(post.body, post.excerpt, 150)}</p>
+                <p data-directus={bodyDirectus}>{excerptFromHtml(post.body, post.excerpt, 150)}</p>
               </div>
             </article>
           );

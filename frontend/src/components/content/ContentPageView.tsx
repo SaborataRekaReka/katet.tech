@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { BlogCategoryRecord, EquipmentCardRecord, NavLink, RichPage, TaxonomyPageRecord } from "@/lib/content";
+import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { assetUrl, canonicalForPath, excerptFromHtml, siteUrl, stripHtml } from "@/lib/format";
 import { siteContacts } from "@/lib/site";
 import { LeadCaptureForm } from "@/components/forms/LeadCaptureForm";
@@ -304,11 +305,11 @@ function splitCityLandingSeoHtml(html: string): CitySeoSplit {
   };
 }
 
-function CitySeoIntroSection({ html, className }: { html: string; className?: string }) {
+function CitySeoIntroSection({ html, className, dataDirectus }: { html: string; className?: string; dataDirectus?: string }) {
   if (!stripHtml(html)) return null;
 
   return (
-    <section className={`section city-landing__seo${className ? ` ${className}` : ""}`}>
+    <section className={`section city-landing__seo${className ? ` ${className}` : ""}`} data-directus={dataDirectus}>
       <div className="container">
         <article className="city-landing__seo-main">
           <div className="content content--wide seo-enhanced__body city-landing__seo-body" dangerouslySetInnerHTML={{ __html: html }} />
@@ -416,6 +417,26 @@ export function ContentPageView({
   const directusBlocks = parseDirectusPageBlocks(record.content_blocks);
   const hasDirectusBlocks = directusBlocks.length > 0;
   const citySeo = isCityLanding ? splitCityLandingSeoHtml(bodyHtml || record.body || record.excerpt || "") : null;
+  const recordCollection = "pages";
+  const heroRootDirectus = toDirectusVisualAttr({
+    collection: recordCollection,
+    item: record.id,
+    fields: ["title", "excerpt", "meta_description", "featured_file_id"],
+    mode: "drawer",
+  });
+  const titleDirectus = toDirectusVisualAttr({ collection: recordCollection, item: record.id, fields: "title", mode: "popover" });
+  const leadDirectus = toDirectusVisualAttr({
+    collection: recordCollection,
+    item: record.id,
+    fields: ["meta_description", "excerpt"],
+    mode: "popover",
+  });
+  const bodyDirectus = toDirectusVisualAttr({
+    collection: recordCollection,
+    item: record.id,
+    fields: hasDirectusBlocks ? ["content_blocks", "body"] : "body",
+    mode: "drawer",
+  });
 
   return (
     <div className={`archive-landing global-catalog-landing dispatcher-header-page static-landing${isCityLanding ? " city-landing" : ""}`}>
@@ -425,9 +446,12 @@ export function ContentPageView({
         description={lead}
         imageSrc="/assets/katet/archive/archive-hero-crane.jpg"
         layout="mainLike"
+        rootDataDirectus={heroRootDirectus}
+        titleDataDirectus={titleDirectus}
+        descriptionDataDirectus={leadDirectus}
       />
 
-      {isCityLanding ? <CitySeoIntroSection html={citySeo?.introHtml || ""} className="city-landing__seo--intro" /> : null}
+      {isCityLanding ? <CitySeoIntroSection html={citySeo?.introHtml || ""} className="city-landing__seo--intro" dataDirectus={bodyDirectus} /> : null}
 
       {isCityLanding && cityEquipment?.length && cityCategories?.length ? (
         <SmartEquipmentCatalog
@@ -438,20 +462,26 @@ export function ContentPageView({
       ) : null}
 
       {isCityLanding ? (
-        <SeoArticleSection
-          title={record.title}
-          html={citySeo?.detailsHtml || ""}
-          wide
-          showFacts={false}
-          className="city-landing__seo city-landing__seo--tail"
-        />
+        <div data-directus={bodyDirectus}>
+          <SeoArticleSection
+            title={record.title}
+            html={citySeo?.detailsHtml || ""}
+            wide
+            showFacts={false}
+            className="city-landing__seo city-landing__seo--tail"
+          />
+        </div>
       ) : (
         <section className="static-template">
           <div className="container static-template__layout">
             <article className="static-template__main">
-              <h2 className="static-template__main-title">{record.title}</h2>
-              {lead ? <p className="article-lead">{lead}</p> : null}
-              {hasDirectusBlocks ? <DirectusPageBlocks blocks={directusBlocks} /> : <div className="content content--wide" dangerouslySetInnerHTML={{ __html: bodyHtml }} />}
+              <h2 className="static-template__main-title" data-directus={titleDirectus}>{record.title}</h2>
+              {lead ? <p className="article-lead" data-directus={leadDirectus}>{lead}</p> : null}
+              {hasDirectusBlocks ? (
+                <DirectusPageBlocks blocks={directusBlocks} collection={recordCollection} itemId={record.id} />
+              ) : (
+                <div className="content content--wide" data-directus={bodyDirectus} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+              )}
             </article>
             <aside className="static-template__side">
               <h2>Катет</h2>
@@ -468,6 +498,21 @@ export function ContentPageView({
 }
 
 function ContactPageView({ record }: { record: RichPage }) {
+  const collection = "pages";
+  const heroRootDirectus = toDirectusVisualAttr({
+    collection,
+    item: record.id,
+    fields: ["title", "excerpt", "meta_description", "body"],
+    mode: "drawer",
+  });
+  const titleDirectus = toDirectusVisualAttr({ collection, item: record.id, fields: "title", mode: "popover" });
+  const descriptionDirectus = toDirectusVisualAttr({
+    collection,
+    item: record.id,
+    fields: ["excerpt", "meta_description", "body"],
+    mode: "popover",
+  });
+
   return (
     <div className="archive-landing global-catalog-landing dispatcher-header-page static-landing contact-page">
       <HeroLead
@@ -477,6 +522,9 @@ function ContactPageView({ record }: { record: RichPage }) {
         imageSrc="/assets/katet/work/scene-construction-site.jpg"
         layout="mainLike"
         showOrderForm={false}
+        rootDataDirectus={heroRootDirectus}
+        titleDataDirectus={titleDirectus}
+        descriptionDataDirectus={descriptionDirectus}
         sideContent={(
           <div className="contact-hero__map contact-template__map">
             <p className="contact-template__map-title">
@@ -556,6 +604,10 @@ function ArticlePageView({
   const topLevelSections = prepared.toc.filter((item) => item.level === 2).length;
   const sidebarTopics = articleSidebarTopics(record, blogCategories);
   const postCategorySet = new Set((record.categories || []).map((item) => item.url_path).filter(Boolean));
+  const collection = "posts";
+  const titleDirectus = toDirectusVisualAttr({ collection, item: record.id, fields: "title", mode: "popover" });
+  const leadDirectus = toDirectusVisualAttr({ collection, item: record.id, fields: ["excerpt", "meta_description"], mode: "popover" });
+  const bodyDirectus = toDirectusVisualAttr({ collection, item: record.id, fields: "body", mode: "drawer" });
 
   const articleSchema = JSON.stringify({
     "@context": "https://schema.org",
@@ -613,8 +665,8 @@ function ArticlePageView({
 
             <header className="article-template__header">
               <p className="article-template__eyebrow">Блог Катет</p>
-              <h1 className="article-template__title">{record.title}</h1>
-              {lead ? <p className="article-template__lead">{lead}</p> : null}
+              <h1 className="article-template__title" data-directus={titleDirectus}>{record.title}</h1>
+              {lead ? <p className="article-template__lead" data-directus={leadDirectus}>{lead}</p> : null}
 
               <ul className="article-template__meta" aria-label="Параметры статьи">
                 {updatedLabel ? (
@@ -656,7 +708,7 @@ function ArticlePageView({
               </nav>
             ) : null}
 
-            <div className="content content--wide article-template__content" dangerouslySetInnerHTML={{ __html: prepared.html }} />
+            <div className="content content--wide article-template__content" data-directus={bodyDirectus} dangerouslySetInnerHTML={{ __html: prepared.html }} />
           </article>
 
           <aside className="article-template__sidebar">

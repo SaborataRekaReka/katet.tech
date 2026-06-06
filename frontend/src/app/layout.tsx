@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Exo_2, IBM_Plex_Sans } from "next/font/google";
 import { LeadRequestModal } from "@/components/forms/LeadRequestModal";
 import { LegacyExternalScripts } from "@/components/analytics/LegacyExternalScripts";
+import { DirectusVisualBridge } from "@/components/directus/DirectusVisualBridge";
 import { SiteFooter } from "@/components/SiteChrome";
 import { HomeDispatcherHeader } from "@/components/home/HomeDispatcherHeader";
 import { getNavigationData } from "@/lib/content";
@@ -58,6 +59,7 @@ export default async function RootLayout({
         <main>{children}</main>
         <SiteFooter navigation={navigation} />
         <LegacyExternalScripts />
+        <DirectusVisualBridge />
         <LeadRequestModal />
         <noscript>
           <div>

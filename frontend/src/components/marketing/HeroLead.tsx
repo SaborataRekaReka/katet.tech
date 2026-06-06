@@ -48,6 +48,9 @@ export function HeroLead({
   showOrderForm = true,
   layout = "mainLike",
   extraContent,
+  rootDataDirectus,
+  titleDataDirectus,
+  descriptionDataDirectus,
 }: {
   eyebrow: string;
   title: string;
@@ -66,6 +69,9 @@ export function HeroLead({
   showOrderForm?: boolean;
   layout?: "default" | "mainLike";
   extraContent?: ReactNode;
+  rootDataDirectus?: string;
+  titleDataDirectus?: string;
+  descriptionDataDirectus?: string;
 }) {
   const src = imageSrc || assetUrl(image) || "/assets/katet/home/hero-construction-site.jpg";
   const isMainLike = layout === "mainLike";
@@ -75,15 +81,15 @@ export function HeroLead({
   const heroBreadcrumbs = breadcrumbs ?? defaultHeroBreadcrumbs(eyebrow, title);
 
   return (
-    <section className={`hero${isMainLike ? " hero--main-analog" : ""}`}>
+    <section className={`hero${isMainLike ? " hero--main-analog" : ""}`} data-directus={rootDataDirectus}>
       {showBackgroundImage && src ? <Image className="hero__image" src={src} alt="Спецтехника Катет" fill priority sizes="100vw" /> : null}
       <div className="hero__shade" />
       <div className={`container hero__inner${isMainLike ? " hero__inner--main-analog" : ""}`}>
         <div className={`hero__copy${isMainLike ? " hero__copy--main-analog" : ""}`}>
           {preTitleContent ? <div className="hero__pretitle">{preTitleContent}</div> : null}
           {!preTitleContent && showBreadcrumbs ? <Breadcrumbs className="hero__breadcrumbs breadcrumbs--hero" items={heroBreadcrumbs} /> : null}
-          <h1>{title}</h1>
-          {showDescription && description ? <p className="hero__description">{stripHtml(description)}</p> : null}
+          <h1 data-directus={titleDataDirectus}>{title}</h1>
+          {showDescription && description ? <p className="hero__description" data-directus={descriptionDataDirectus}>{stripHtml(description)}</p> : null}
           {extraContent ? <div className="hero__extra">{extraContent}</div> : null}
           {!isMainLike && showOrderForm ? <HeroQuickOrderForm /> : null}
         </div>

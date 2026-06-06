@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ComponentType } from "react";
 import type { EquipmentCardRecord } from "@/lib/content";
+import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { assetUrl, excerptFromHtml, formatPrice } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { ActionLink } from "@/components/ui/Button";
@@ -147,13 +148,21 @@ export function EquipmentCard({ item, variant = "default" }: { item: EquipmentCa
   const description = isArchive
     ? archiveSpecsSummary(item)
     : excerptFromHtml(item.excerpt, null, 120) || "Техника доступна для аренды с экипажем.";
+  const rootDirectus = toDirectusVisualAttr({
+    collection: "equipment_items",
+    item: item.id,
+    fields: ["title", "excerpt", "price_raw", "price_amount", "hours_per_shift", "featured_file_id", "specs"],
+    mode: "drawer",
+  });
+  const titleDirectus = toDirectusVisualAttr({ collection: "equipment_items", item: item.id, fields: "title", mode: "popover" });
+  const descriptionDirectus = toDirectusVisualAttr({ collection: "equipment_items", item: item.id, fields: ["excerpt", "specs"], mode: "modal" });
 
   if (isArchive) {
     return (
-      <article className="equipment-card equipment-card--archive">
+      <article className="equipment-card equipment-card--archive" data-directus={rootDirectus}>
         <div className="equipment-card__body">
           <Badge className="equipment-card__status" tone="success">в наличии</Badge>
-          <Link className="equipment-card__media u-pos-rel" href={item.url_path} aria-label={item.title}>
+          <Link className="equipment-card__media u-pos-rel" href={item.url_path} aria-label={item.title} data-directus={rootDirectus}>
             {src ? (
               <Image
                 src={src}
@@ -170,12 +179,12 @@ export function EquipmentCard({ item, variant = "default" }: { item: EquipmentCa
           <div className="equipment-card__title-wrap">
             {title.kind ? <span className="equipment-card__kind">{title.kind}</span> : null}
             <h3>
-              <Link href={item.url_path}>{title.model}</Link>
+              <Link href={item.url_path} data-directus={titleDirectus}>{title.model}</Link>
             </h3>
           </div>
 
           {metrics.length ? (
-            <ul className="equipment-card__metrics" aria-label="Ключевые характеристики">
+            <ul className="equipment-card__metrics" aria-label="Ключевые характеристики" data-directus={descriptionDirectus}>
               {metrics.map((metric) => (
                 <li key={`${item.id}-${metric.key}-${metric.value}`}>
                   <metric.Icon aria-hidden="true" />
@@ -214,10 +223,10 @@ export function EquipmentCard({ item, variant = "default" }: { item: EquipmentCa
   }
 
   return (
-    <article className="equipment-card">
+    <article className="equipment-card" data-directus={rootDirectus}>
       <div className="equipment-card__body">
         <Badge className="equipment-card__status" tone="success">в наличии</Badge>
-        <Link className="equipment-card__media u-pos-rel" href={item.url_path} aria-label={item.title}>
+        <Link className="equipment-card__media u-pos-rel" href={item.url_path} aria-label={item.title} data-directus={rootDirectus}>
           {src ? (
             <Image
               src={src}
@@ -232,9 +241,9 @@ export function EquipmentCard({ item, variant = "default" }: { item: EquipmentCa
         </Link>
         <strong className="equipment-card__price">{price}</strong>
         <h3>
-          <Link href={item.url_path}>{item.title}</Link>
+          <Link href={item.url_path} data-directus={titleDirectus}>{item.title}</Link>
         </h3>
-        <p>{description}</p>
+        <p data-directus={descriptionDirectus}>{description}</p>
         <div className="equipment-card__chips" aria-label="Условия аренды">
           <span>{shiftLabel}</span>
           <span>С экипажем</span>

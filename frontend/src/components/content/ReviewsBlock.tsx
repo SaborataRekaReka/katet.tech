@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReviewRecord } from "@/lib/content";
+import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { assetUrl, excerptFromHtml } from "@/lib/format";
 import { Section, SectionHeader } from "@/components/layout/Section";
 import { Avatar } from "@/components/ui/Avatar";
@@ -36,17 +37,26 @@ export function ReviewsBlock({ reviews }: { reviews: ReviewRecord[] }) {
       >
         {reviews.map((review) => {
           const src = assetUrl(review.photo || review.image);
+          const rootDirectus = toDirectusVisualAttr({
+            collection: "reviews",
+            item: review.id,
+            fields: ["title", "reviewer_name", "body", "photo_file_id", "featured_file_id"],
+            mode: "drawer",
+          });
+          const titleDirectus = toDirectusVisualAttr({ collection: "reviews", item: review.id, fields: ["title", "reviewer_name"], mode: "popover" });
+          const bodyDirectus = toDirectusVisualAttr({ collection: "reviews", item: review.id, fields: "body", mode: "modal" });
+
           return (
-            <article className="review-card" key={review.id}>
+            <article className="review-card" key={review.id} data-directus={rootDirectus}>
               <div className="review-card__top">
                 <Avatar src={src} alt={review.title} fallback={review.title.slice(0, 1)} />
                 <div>
-                  <h3>{review.reviewer_name || review.title}</h3>
+                  <h3 data-directus={titleDirectus}>{review.reviewer_name || review.title}</h3>
                   <p>Яндекс Карты</p>
                 </div>
               </div>
-              <p>{excerptFromHtml(review.body, null, 220)}</p>
-              <Link href={review.url_path}>Читать отзыв</Link>
+              <p data-directus={bodyDirectus}>{excerptFromHtml(review.body, null, 220)}</p>
+              <Link href={review.url_path} data-directus={rootDirectus}>Читать отзыв</Link>
             </article>
           );
         })}

@@ -43,6 +43,10 @@ export const metadata: Metadata = {
     icon: [{ url: "/fav.svg", type: "image/svg+xml" }],
     shortcut: ["/fav.svg"],
   },
+  verification: {
+    google: "5_DgoA_5W9ugvNkmaYJ3_vqK7KM8sTCpUJIwuineUDI",
+    yandex: "27ee33d22832c7c7",
+  },
 };
 
 export default async function RootLayout({

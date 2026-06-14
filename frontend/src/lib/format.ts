@@ -17,12 +17,17 @@ export type ImageFile = {
   type?: string | null;
 };
 
+function envUrl(name: string, fallback: string) {
+  const value = process.env[name]?.trim();
+  return (value || fallback).replace(/\/$/, "");
+}
+
 export function siteUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://katet.tech").replace(/\/$/, "");
+  return envUrl("NEXT_PUBLIC_SITE_URL", "https://katet.tech");
 }
 
 export function directusUrl() {
-  return (process.env.NEXT_PUBLIC_DIRECTUS_URL ?? "http://localhost:8055").replace(/\/$/, "");
+  return envUrl("NEXT_PUBLIC_DIRECTUS_URL", "http://localhost:8055");
 }
 
 export function assetUrl(image?: ImageFile | null) {

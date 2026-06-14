@@ -142,6 +142,47 @@ jobs:
               "echo ssh-auth-ok"
           fi
 
+      - name: Prepare remote deploy temp directory
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          REMOTE_DEPLOY_TMP_DIR="${DEPLOY_APP_DIR}/.deploy_tmp"
+          REMOTE_ARCHIVE_PATH="${REMOTE_DEPLOY_TMP_DIR}/frontend-${{ github.sha }}.tgz"
+          REMOTE_SCRIPT_PATH="${REMOTE_DEPLOY_TMP_DIR}/deploy_frontend_remote.sh"
+
+          echo "REMOTE_DEPLOY_TMP_DIR=${REMOTE_DEPLOY_TMP_DIR}" >> "$GITHUB_ENV"
+          echo "REMOTE_ARCHIVE_PATH=${REMOTE_ARCHIVE_PATH}" >> "$GITHUB_ENV"
+          echo "REMOTE_SCRIPT_PATH=${REMOTE_SCRIPT_PATH}" >> "$GITHUB_ENV"
+
+          REMOTE_PREP_CMD="mkdir -p '${REMOTE_DEPLOY_TMP_DIR}' && \
+            find '${REMOTE_DEPLOY_TMP_DIR}' -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +1 -delete && \
+            find '${REMOTE_DEPLOY_TMP_DIR}' -maxdepth 1 -type f -name 'deploy_frontend_remote*.sh' -mtime +1 -delete && \
+            find /tmp -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +1 -delete && \
+            df -h '${DEPLOY_APP_DIR}' | awk 'NR==1 || NR==2'"
+
+          if [[ "${AUTH_MODE:-key}" == "key" ]]; then
+            ssh \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o PreferredAuthentications=publickey \
+              -o ConnectTimeout=20 \
+              -i ~/.ssh/id_rsa \
+              -p "${PORT}" \
+              "${TARGET}" \
+              "${REMOTE_PREP_CMD}"
+          else
+            SSHPASS="${DEPLOY_PASSWORD}" sshpass -e ssh \
+              -o PubkeyAuthentication=no \
+              -o PreferredAuthentications=password \
+              -o ConnectTimeout=20 \
+              -p "${PORT}" \
+              "${TARGET}" \
+              "${REMOTE_PREP_CMD}"
+          fi
+
       - name: Build deploy archive
         run: |
           set -euo pipefail
@@ -166,7 +207,7 @@ jobs:
               -o ConnectTimeout=20 \
               -i ~/.ssh/id_rsa \
               -P "${PORT}" \
-              frontend-${{ github.sha }}.tgz "${TARGET}:/tmp/frontend-${{ github.sha }}.tgz"
+              frontend-${{ github.sha }}.tgz "${TARGET}:${REMOTE_ARCHIVE_PATH}"
             scp \
               -o BatchMode=yes \
               -o IdentitiesOnly=yes \
@@ -174,20 +215,20 @@ jobs:
               -o ConnectTimeout=20 \
               -i ~/.ssh/id_rsa \
               -P "${PORT}" \
-              ./.github/scripts/deploy_frontend_remote.sh "${TARGET}:/tmp/deploy_frontend_remote.sh"
+              ./.github/scripts/deploy_frontend_remote.sh "${TARGET}:${REMOTE_SCRIPT_PATH}"
           else
             SSHPASS="${DEPLOY_PASSWORD}" sshpass -e scp \
               -o PubkeyAuthentication=no \
               -o PreferredAuthentications=password \
               -o ConnectTimeout=20 \
               -P "${PORT}" \
-              frontend-${{ github.sha }}.tgz "${TARGET}:/tmp/frontend-${{ github.sha }}.tgz"
+              frontend-${{ github.sha }}.tgz "${TARGET}:${REMOTE_ARCHIVE_PATH}"
             SSHPASS="${DEPLOY_PASSWORD}" sshpass -e scp \
               -o PubkeyAuthentication=no \
               -o PreferredAuthentications=password \
               -o ConnectTimeout=20 \
               -P "${PORT}" \
-              ./.github/scripts/deploy_frontend_remote.sh "${TARGET}:/tmp/deploy_frontend_remote.sh"
+              ./.github/scripts/deploy_frontend_remote.sh "${TARGET}:${REMOTE_SCRIPT_PATH}"
           fi
 
       - name: Run remote deploy
@@ -211,8 +252,8 @@ jobs:
               -i ~/.ssh/id_rsa \
               -p "${PORT}" \
               "${TARGET}" \
-              "chmod +x /tmp/deploy_frontend_remote.sh && \
-               DEPLOY_ARCHIVE_PATH=/tmp/frontend-${{ github.sha }}.tgz \
+              "chmod +x '${REMOTE_SCRIPT_PATH}' && \
+               DEPLOY_ARCHIVE_PATH='${REMOTE_ARCHIVE_PATH}' \
                DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' \
                DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
                DEPLOY_LABEL='${{ github.sha }}' \
@@ -227,7 +268,7 @@ jobs:
               YANDEX_WEBMASTER_CLIENT_ID='${{ secrets.YANDEX_WEBMASTER_CLIENT_ID }}' \
               YANDEX_WEBMASTER_CLIENT_SECRET='${{ secrets.YANDEX_WEBMASTER_CLIENT_SECRET }}' \
               YANDEX_WEBMASTER_REFRESH_TOKEN='${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}' \
-               /tmp/deploy_frontend_remote.sh"
+               '${REMOTE_SCRIPT_PATH}'"
           else
             SSHPASS="${DEPLOY_PASSWORD}" sshpass -e ssh \
               -o PubkeyAuthentication=no \
@@ -235,8 +276,8 @@ jobs:
               -o ConnectTimeout=20 \
               -p "${PORT}" \
               "${TARGET}" \
-              "chmod +x /tmp/deploy_frontend_remote.sh && \
-               DEPLOY_ARCHIVE_PATH=/tmp/frontend-${{ github.sha }}.tgz \
+              "chmod +x '${REMOTE_SCRIPT_PATH}' && \
+               DEPLOY_ARCHIVE_PATH='${REMOTE_ARCHIVE_PATH}' \
                DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' \
                DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
                DEPLOY_LABEL='${{ github.sha }}' \
@@ -251,5 +292,5 @@ jobs:
                 YANDEX_WEBMASTER_CLIENT_ID='${{ secrets.YANDEX_WEBMASTER_CLIENT_ID }}' \
                 YANDEX_WEBMASTER_CLIENT_SECRET='${{ secrets.YANDEX_WEBMASTER_CLIENT_SECRET }}' \
                 YANDEX_WEBMASTER_REFRESH_TOKEN='${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}' \
-               /tmp/deploy_frontend_remote.sh"
+                '${REMOTE_SCRIPT_PATH}'"
           fi

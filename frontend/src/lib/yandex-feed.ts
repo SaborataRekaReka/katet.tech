@@ -15,11 +15,13 @@ type FeedWorkType = {
 type FeedRow = {
   id: string;
   title: string;
+  slug: string;
   url_path: string;
   excerpt: string | null;
   body: string | null;
   price_amount: string | null;
   price_raw: string | null;
+  price_alt: string | null;
   hours_per_shift: number | null;
   image_id: string | null;
   equipment_types: FeedCategory[] | null;
@@ -29,6 +31,7 @@ type FeedRow = {
 const FALLBACK_CATEGORY_ID = "equipment";
 const FALLBACK_CATEGORY_NAME = "Equipment";
 const DESCRIPTION_LIMIT = 2500;
+const FALLBACK_OFFER_PRICE = "1";
 
 function xmlEscape(value: string) {
   return value
@@ -53,6 +56,12 @@ function toAbsoluteUrl(pathValue: string) {
   if (/^https?:\/\//i.test(pathValue)) return pathValue;
   if (pathValue.startsWith("/")) return `${siteUrl()}${pathValue}`;
   return `${siteUrl()}/${pathValue}`;
+}
+
+function resolveOfferPath(row: FeedRow) {
+  const pathValue = row.url_path?.trim();
+  if (pathValue) return pathValue;
+  return `/arenda_spetstekhniki/${row.slug}/`;
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -82,7 +91,9 @@ function parsePrice(raw: string | null) {
 }
 
 function resolveOfferPrice(row: FeedRow) {
-  return parsePrice(row.price_amount) ?? parsePrice(row.price_raw);
+  const parsed = parsePrice(row.price_amount) ?? parsePrice(row.price_raw) ?? parsePrice(row.price_alt);
+  if (parsed) return { value: parsed, isFallback: false };
+  return { value: FALLBACK_OFFER_PRICE, isFallback: true };
 }
 
 function normalizeCategoryId(value: string) {
@@ -98,17 +109,20 @@ function buildDescription(row: FeedRow) {
 }
 
 function buildOfferXml(row: FeedRow, categoryId: string) {
-  const price = resolveOfferPrice(row);
-  if (!price) return null;
+  const { value: price, isFallback } = resolveOfferPrice(row);
 
   const lines = [
     `      <offer id="${xmlEscape(row.id)}" available="true">`,
     `        <name>${xmlEscape(normalizeText(row.title))}</name>`,
-    `        <url>${xmlEscape(toAbsoluteUrl(row.url_path))}</url>`,
+    `        <url>${xmlEscape(toAbsoluteUrl(resolveOfferPath(row)))}</url>`,
     `        <price>${price}</price>`,
     "        <currencyId>RUB</currencyId>",
     `        <categoryId>${xmlEscape(categoryId)}</categoryId>`,
   ];
+
+  if (isFallback) {
+    lines.push("        <param name=\"price_note\">Цена по запросу</param>");
+  }
 
   if (row.image_id) {
     lines.push(`        <picture>${xmlEscape(`${directusUrl()}/assets/${row.image_id}`)}</picture>`);
@@ -138,12 +152,14 @@ export async function buildYandexEquipmentYml() {
     `
       SELECT
         e.id::text,
+        e.slug,
         e.title,
-        e.url_path,
+        COALESCE(NULLIF(e.url_path, ''), '/arenda_spetstekhniki/' || e.slug || '/') AS url_path,
         e.excerpt,
         e.body,
         e.price_amount::text,
         e.price_raw,
+        e.price_alt,
         e.hours_per_shift,
         e.featured_file_id::text AS image_id,
         COALESCE((
@@ -160,8 +176,6 @@ export async function buildYandexEquipmentYml() {
         ), '[]'::json) AS work_types
       FROM equipment_items e
       WHERE e.status = 'publish'
-        AND e.url_path IS NOT NULL
-        AND COALESCE(e.is_requestable, TRUE) = TRUE
       ORDER BY e.legacy_id NULLS LAST, e.title
     `,
   );
@@ -189,7 +203,6 @@ export async function buildYandexEquipmentYml() {
     }
 
     const offerXml = buildOfferXml(row, primaryCategoryId);
-    if (!offerXml) continue;
     offers.push(offerXml);
   }
 

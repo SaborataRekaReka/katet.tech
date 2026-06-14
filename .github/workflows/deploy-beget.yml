@@ -157,11 +157,65 @@ jobs:
           echo "REMOTE_ARCHIVE_PATH=${REMOTE_ARCHIVE_PATH}" >> "$GITHUB_ENV"
           echo "REMOTE_SCRIPT_PATH=${REMOTE_SCRIPT_PATH}" >> "$GITHUB_ENV"
 
-          REMOTE_PREP_CMD="mkdir -p '${REMOTE_DEPLOY_TMP_DIR}' && \
-            find '${REMOTE_DEPLOY_TMP_DIR}' -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +1 -delete && \
-            find '${REMOTE_DEPLOY_TMP_DIR}' -maxdepth 1 -type f -name 'deploy_frontend_remote*.sh' -mtime +1 -delete && \
-            find /tmp -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +1 -delete && \
-            df -h '${DEPLOY_APP_DIR}' | awk 'NR==1 || NR==2'"
+          REMOTE_PREP_SCRIPT="$(cat <<'EOF'
+          set -euo pipefail
+
+          APP_DIR="${DEPLOY_APP_DIR:?}"
+          TMP_DIR="${REMOTE_DEPLOY_TMP_DIR:?}"
+          RELEASES_DIR="${APP_DIR}/releases"
+          BACKUPS_DIR="${APP_DIR}/backups"
+          LOGS_DIR="${APP_DIR}/logs"
+
+          print_df() {
+            echo "[prep] Disk usage for ${APP_DIR}:"
+            df -h "${APP_DIR}" | awk 'NR==1 || NR==2'
+          }
+
+          cleanup_common() {
+            find /tmp -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +0 -delete || true
+            find /tmp -maxdepth 1 -type f -name 'deploy_frontend_remote*.sh' -mtime +0 -delete || true
+            if [[ -d "${TMP_DIR}" ]]; then
+              find "${TMP_DIR}" -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +0 -delete || true
+              find "${TMP_DIR}" -maxdepth 1 -type f -name 'deploy_frontend_remote*.sh' -mtime +0 -delete || true
+            fi
+            npm cache clean --force >/dev/null 2>&1 || true
+          }
+
+          cleanup_aggressive() {
+            local idx
+            local -a releases=()
+            local -a backups=()
+
+            if [[ -d "${RELEASES_DIR}" ]]; then
+              mapfile -t releases < <(ls -1dt "${RELEASES_DIR}"/frontend-* 2>/dev/null || true)
+              for ((idx=2; idx<${#releases[@]}; idx++)); do
+                rm -rf "${releases[idx]}" || true
+              done
+            fi
+
+            if [[ -d "${BACKUPS_DIR}" ]]; then
+              mapfile -t backups < <(ls -1dt "${BACKUPS_DIR}"/frontend-*.tgz 2>/dev/null || true)
+              for ((idx=5; idx<${#backups[@]}; idx++)); do
+                rm -f "${backups[idx]}" || true
+              done
+            fi
+
+            if [[ -d "${LOGS_DIR}" ]]; then
+              find "${LOGS_DIR}" -maxdepth 1 -type f -name '*.log' -mtime +14 -delete || true
+            fi
+          }
+
+          cleanup_common
+          if ! mkdir -p "${TMP_DIR}"; then
+            echo "[prep] mkdir ${TMP_DIR} failed, running aggressive cleanup"
+            cleanup_aggressive
+            cleanup_common
+            mkdir -p "${TMP_DIR}"
+          fi
+
+          print_df
+          EOF
+          )"
 
           if [[ "${AUTH_MODE:-key}" == "key" ]]; then
             ssh \
@@ -172,7 +226,7 @@ jobs:
               -i ~/.ssh/id_rsa \
               -p "${PORT}" \
               "${TARGET}" \
-              "${REMOTE_PREP_CMD}"
+              "DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' REMOTE_DEPLOY_TMP_DIR='${REMOTE_DEPLOY_TMP_DIR}' bash -se" <<<"${REMOTE_PREP_SCRIPT}"
           else
             SSHPASS="${DEPLOY_PASSWORD}" sshpass -e ssh \
               -o PubkeyAuthentication=no \
@@ -180,7 +234,7 @@ jobs:
               -o ConnectTimeout=20 \
               -p "${PORT}" \
               "${TARGET}" \
-              "${REMOTE_PREP_CMD}"
+              "DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' REMOTE_DEPLOY_TMP_DIR='${REMOTE_DEPLOY_TMP_DIR}' bash -se" <<<"${REMOTE_PREP_SCRIPT}"
           fi
 
       - name: Build deploy archive

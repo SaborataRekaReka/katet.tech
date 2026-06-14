@@ -11,6 +11,14 @@ const DEFAULT_REGION_IDS = [225];
 const ALLOWED_FEED_TYPES = new Set(["REALTY", "VACANCY", "GOODS", "DOCTORS", "CARS", "SERVICES"]);
 const OK_FEED_STATUSES = new Set(["OK", "FEED_ALREADY_ADDED"]);
 
+function normalizeFeedType(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function findFeedByUrl(feeds, feedUrl) {
+  return feeds.find((feed) => String(feed?.url || "").trim() === feedUrl);
+}
+
 function loadDotEnvFiles(frontendRoot) {
   const envFiles = [
     path.join(frontendRoot, ".env.local"),
@@ -146,6 +154,17 @@ function buildApiUrl(pathValue, query = undefined) {
 }
 
 async function webmasterRequest({ token, method, pathValue, query, body, timeoutMs }) {
+  const result = await webmasterRequestRaw({ token, method, pathValue, query, body, timeoutMs });
+
+  if (!result.ok) {
+    const details = result.payload && typeof result.payload === "object" ? JSON.stringify(result.payload) : result.text;
+    throw new Error(`Webmaster API ${method} ${result.url.pathname} failed: HTTP ${result.status}${details ? `, ${details}` : ""}`);
+  }
+
+  return result.payload;
+}
+
+async function webmasterRequestRaw({ token, method, pathValue, query, body, timeoutMs }) {
   const url = buildApiUrl(pathValue, query);
   const response = await fetch(url, {
     method,
@@ -165,12 +184,13 @@ async function webmasterRequest({ token, method, pathValue, query, body, timeout
     payload = null;
   }
 
-  if (!response.ok) {
-    const details = payload && typeof payload === "object" ? JSON.stringify(payload) : text;
-    throw new Error(`Webmaster API ${method} ${url.pathname} failed: HTTP ${response.status}${details ? `, ${details}` : ""}`);
-  }
-
-  return payload;
+  return {
+    ok: response.ok,
+    status: response.status,
+    payload,
+    text,
+    url,
+  };
 }
 
 async function verifyFeedReachability(feedUrl, timeoutMs) {
@@ -324,6 +344,46 @@ async function pushFeed(token, userId, hostId, feedUrl, feedType, regionIds, tim
   return status;
 }
 
+async function removeFeedByUrl(token, userId, hostId, feedUrl, timeoutMs) {
+  const pathValue = `/user/${encodeURIComponent(userId)}/hosts/${encodeURIComponent(hostId)}/feeds/batch/remove`;
+  const payloadCandidates = [
+    { feeds: [{ url: feedUrl }] },
+    { feeds: [feedUrl] },
+    { urls: [feedUrl] },
+  ];
+
+  let lastError = null;
+
+  for (const body of payloadCandidates) {
+    const result = await webmasterRequestRaw({
+      token,
+      method: "DELETE",
+      pathValue,
+      body,
+      timeoutMs,
+    });
+
+    if (result.ok) {
+      return;
+    }
+
+    const details = result.payload && typeof result.payload === "object"
+      ? JSON.stringify(result.payload)
+      : result.text;
+
+    if (result.status === 400) {
+      lastError = `HTTP 400${details ? `, ${details}` : ""}`;
+      continue;
+    }
+
+    throw new Error(
+      `Failed to remove existing feed before re-upload: HTTP ${result.status}${details ? `, ${details}` : ""}`,
+    );
+  }
+
+  throw new Error(`Failed to remove existing feed before re-upload. ${lastError || "No details"}`);
+}
+
 async function main() {
   const frontendRoot = path.resolve(process.cwd());
   loadDotEnvFiles(frontendRoot);
@@ -358,17 +418,34 @@ async function main() {
   console.log(`[info] feed_type=${feedType}`);
   console.log(`[info] region_ids=${regionIds.join(",")}`);
 
+  console.log("[step] Fetching current feed list");
+  const feedsBeforePush = await listFeeds(token, userId, hostId, timeoutMs);
+  const existingFeed = findFeedByUrl(feedsBeforePush, feedUrl);
+
+  if (existingFeed) {
+    const existingType = normalizeFeedType(existingFeed.type);
+    if (existingType && existingType !== feedType) {
+      console.log(`[step] Existing feed has type=${existingType}, expected ${feedType}. Removing old feed registration.`);
+      await removeFeedByUrl(token, userId, hostId, feedUrl, timeoutMs);
+    }
+  }
+
   console.log("[step] Uploading feed to Yandex Webmaster");
   const uploadStatus = await pushFeed(token, userId, hostId, feedUrl, feedType, regionIds, timeoutMs);
   console.log(`[info] upload_status=${uploadStatus}`);
 
   console.log("[step] Fetching feed list");
   const feeds = await listFeeds(token, userId, hostId, timeoutMs);
-  const matching = feeds.find((feed) => String(feed.url || "").trim() === feedUrl);
+  const matching = findFeedByUrl(feeds, feedUrl);
 
   if (!matching) {
     console.warn("[warn] Feed is not yet visible in feeds/list. It may appear after a short delay.");
   } else {
+    const actualType = normalizeFeedType(matching.type);
+    if (actualType && actualType !== feedType) {
+      throw new Error(`Feed type mismatch after upload. Expected ${feedType}, got ${actualType}.`);
+    }
+
     console.log(`[done] Feed is present in Webmaster: ${matching.url} (type=${matching.type}, regions=${(matching.regionIds || []).join(",")})`);
   }
 }

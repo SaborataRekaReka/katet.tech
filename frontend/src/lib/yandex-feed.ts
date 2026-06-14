@@ -2,6 +2,7 @@ import "server-only";
 
 import { query } from "./db";
 import { directusUrl, siteUrl, stripHtml } from "./format";
+import fallbackOfferPaths from "./yandex-feed-fallback-paths.json";
 
 type FeedCategory = {
   id: string;
@@ -45,7 +46,11 @@ type DirectusEquipmentItem = {
 const FALLBACK_CATEGORY_ID = "equipment";
 const FALLBACK_CATEGORY_NAME = "Equipment";
 const DESCRIPTION_LIMIT = 2500;
-const FALLBACK_OFFER_PRICE = "1";
+const FALLBACK_OFFER_PRICE = "0";
+const SERVICES_FEED_TYPE = "SERVICES";
+const DEFAULT_SET_ID = "s1";
+const DEFAULT_SET_NAME = "Аренда спецтехники";
+const DEFAULT_SET_PATH = "/arenda_spetstekhniki/";
 
 function xmlEscape(value: string) {
   return value
@@ -72,6 +77,10 @@ function toAbsoluteUrl(pathValue: string) {
   return `${siteUrl()}/${pathValue}`;
 }
 
+function getFeedType() {
+  return (process.env.YANDEX_WEBMASTER_FEED_TYPE || SERVICES_FEED_TYPE).trim().toUpperCase();
+}
+
 function resolveOfferPath(row: FeedRow) {
   const pathValue = row.url_path?.trim();
   if (pathValue) return pathValue;
@@ -80,6 +89,34 @@ function resolveOfferPath(row: FeedRow) {
 
 function normalizeText(value: string | null | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function slugToTitle(slug: string) {
+  const title = slug
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!title) return "Спецтехника";
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+function normalizeOfferPath(pathValue: string) {
+  const trimmed = pathValue.trim();
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      const normalizedPath = parsed.pathname || "/";
+      return normalizedPath.endsWith("/") ? normalizedPath : `${normalizedPath}/`;
+    } catch {
+      return null;
+    }
+  }
+
+  const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withSlash.endsWith("/") ? withSlash : `${withSlash}/`;
 }
 
 function truncate(value: string, limit: number) {
@@ -182,17 +219,56 @@ async function loadRowsFromDirectus() {
   }
 }
 
-function buildOfferXml(row: FeedRow, categoryId: string) {
+function loadRowsFromFallbackPaths() {
+  const rows: FeedRow[] = [];
+  const seenSlugs = new Set<string>();
+
+  for (const rawPath of fallbackOfferPaths as string[]) {
+    const normalizedPath = normalizeOfferPath(rawPath);
+    if (!normalizedPath || normalizedPath === DEFAULT_SET_PATH) continue;
+    if (!normalizedPath.startsWith("/arenda_spetstekhniki/")) continue;
+
+    const segments = normalizedPath.split("/").filter(Boolean);
+    const slug = segments[segments.length - 1];
+    if (!slug || seenSlugs.has(slug)) continue;
+
+    seenSlugs.add(slug);
+    rows.push({
+      id: `fallback-${slug}`,
+      title: slugToTitle(slug),
+      slug,
+      url_path: normalizedPath,
+      excerpt: null,
+      body: null,
+      price_amount: null,
+      price_raw: null,
+      price_alt: null,
+      hours_per_shift: null,
+      image_id: null,
+      equipment_types: [],
+      work_types: [],
+    });
+  }
+
+  return rows;
+}
+
+function buildOfferXml(row: FeedRow, categoryId: string, options: { includeSets: boolean; currencyId: string }) {
   const { value: price, isFallback } = resolveOfferPrice(row);
 
   const lines = [
-    `      <offer id="${xmlEscape(row.id)}" available="true">`,
+    `      <offer id="${xmlEscape(row.id)}">`,
     `        <name>${xmlEscape(normalizeText(row.title))}</name>`,
     `        <url>${xmlEscape(toAbsoluteUrl(resolveOfferPath(row)))}</url>`,
     `        <price>${price}</price>`,
-    "        <currencyId>RUB</currencyId>",
+    `        <currencyId>${options.currencyId}</currencyId>`,
+    "        <sales_notes>за смену</sales_notes>",
     `        <categoryId>${xmlEscape(categoryId)}</categoryId>`,
   ];
+
+  if (options.includeSets) {
+    lines.push(`        <set-ids>${DEFAULT_SET_ID}</set-ids>`);
+  }
 
   if (isFallback) {
     lines.push("        <param name=\"price_note\">Цена по запросу</param>");
@@ -222,6 +298,10 @@ function buildOfferXml(row: FeedRow, categoryId: string) {
 }
 
 export async function buildYandexEquipmentYml() {
+  const feedType = getFeedType();
+  const includeSets = feedType === SERVICES_FEED_TYPE;
+  const currencyId = includeSets ? "RUR" : "RUB";
+
   let rows = await query<FeedRow>(
     `
       SELECT
@@ -258,6 +338,10 @@ export async function buildYandexEquipmentYml() {
     rows = await loadRowsFromDirectus();
   }
 
+  if (rows.length === 0) {
+    rows = loadRowsFromFallbackPaths();
+  }
+
   const categories = new Map<string, string>();
   const offers: string[] = [];
 
@@ -280,7 +364,7 @@ export async function buildYandexEquipmentYml() {
       categories.set(primaryCategoryId, FALLBACK_CATEGORY_NAME);
     }
 
-    const offerXml = buildOfferXml(row, primaryCategoryId);
+    const offerXml = buildOfferXml(row, primaryCategoryId, { includeSets, currencyId });
     offers.push(offerXml);
   }
 
@@ -293,6 +377,17 @@ export async function buildYandexEquipmentYml() {
     .map(([id, name]) => `      <category id="${xmlEscape(id)}">${xmlEscape(name)}</category>`)
     .join("\n");
 
+  const setsXml = includeSets
+    ? [
+        "    <sets>",
+        `      <set id="${DEFAULT_SET_ID}">`,
+        `        <name>${xmlEscape(DEFAULT_SET_NAME)}</name>`,
+        `        <url>${xmlEscape(toAbsoluteUrl(DEFAULT_SET_PATH))}</url>`,
+        "      </set>",
+        "    </sets>",
+      ].join("\n")
+    : "";
+
   const date = toYmlDate(new Date());
 
   return [
@@ -303,11 +398,12 @@ export async function buildYandexEquipmentYml() {
     "    <company>Katet</company>",
     `    <url>${xmlEscape(siteUrl())}</url>`,
     "    <currencies>",
-    "      <currency id=\"RUB\" rate=\"1\"/>",
+    `      <currency id="${currencyId}" rate="1"/>`,
     "    </currencies>",
     "    <categories>",
     categoriesXml,
     "    </categories>",
+    setsXml,
     "    <offers>",
     offers.join("\n"),
     "    </offers>",

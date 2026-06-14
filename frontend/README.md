@@ -51,6 +51,7 @@ npm --prefix .\frontend run check:env
 - `/zapros/{slug}/` redirects to `/arenda_spetstekhniki/` because the legacy `zapros` taxonomy is not a public content entity anymore
 - `/robots.txt`
 - `/sitemap.xml`
+- `/yandex-feed.xml` (YML/XML feed for Yandex Webmaster enhanced search snippets)
 - `/api/leads/` for lead form submission into Directus collection `leads` (Items API with PostgreSQL fallback)
 
 ## Validation
@@ -79,6 +80,32 @@ $results | Group-Object Status | Sort-Object Name | Select-Object Name,Count | F
 ```
 
 Current local result: `351/351` inventory URLs return `200`.
+
+## Yandex Feed Upload
+
+1. Ensure production feed URL is public and returns XML:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://katet.tech/yandex-feed.xml
+```
+
+2. Configure OAuth in `frontend/.env.local`:
+
+- `YANDEX_WEBMASTER_OAUTH_TOKEN` (preferred), or
+- `YANDEX_WEBMASTER_CLIENT_ID` + `YANDEX_WEBMASTER_CLIENT_SECRET` + `YANDEX_WEBMASTER_REFRESH_TOKEN`
+
+3. Upload feed to Yandex Webmaster:
+
+```powershell
+npm --prefix .\frontend run push:yandex-feed
+```
+
+Optional overrides:
+
+- `YANDEX_WEBMASTER_HOST_URL` or explicit `YANDEX_WEBMASTER_HOST_ID`
+- `YANDEX_WEBMASTER_FEED_URL` (defaults to `${NEXT_PUBLIC_SITE_URL}/yandex-feed.xml`)
+- `YANDEX_WEBMASTER_FEED_TYPE` (`SERVICES` by default)
+- `YANDEX_WEBMASTER_FEED_REGION_IDS` (`225` by default)
 
 ## Notes
 

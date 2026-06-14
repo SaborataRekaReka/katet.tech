@@ -26,6 +26,16 @@ jobs:
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
       DEPLOY_SERVICE_NAME: ${{ secrets.DEPLOY_SERVICE_NAME }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      YANDEX_WEBMASTER_HOST_URL: ${{ secrets.YANDEX_WEBMASTER_HOST_URL }}
+      YANDEX_WEBMASTER_FEED_URL: ${{ secrets.YANDEX_WEBMASTER_FEED_URL }}
+      YANDEX_WEBMASTER_FEED_TYPE: ${{ secrets.YANDEX_WEBMASTER_FEED_TYPE }}
+      YANDEX_WEBMASTER_FEED_REGION_IDS: ${{ secrets.YANDEX_WEBMASTER_FEED_REGION_IDS }}
+      YANDEX_WEBMASTER_TIMEOUT_MS: ${{ secrets.YANDEX_WEBMASTER_TIMEOUT_MS }}
+      YANDEX_WEBMASTER_OAUTH_TOKEN: ${{ secrets.YANDEX_WEBMASTER_OAUTH_TOKEN }}
+      YANDEX_WEBMASTER_CLIENT_ID: ${{ secrets.YANDEX_WEBMASTER_CLIENT_ID }}
+      YANDEX_WEBMASTER_CLIENT_SECRET: ${{ secrets.YANDEX_WEBMASTER_CLIENT_SECRET }}
+      YANDEX_WEBMASTER_REFRESH_TOKEN: ${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -193,10 +203,15 @@ jobs:
       - name: Run remote deploy
         env:
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          FRONTEND_ENV_LOCAL_PLAIN: ${{ secrets.FRONTEND_ENV_LOCAL }}
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
           TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+          FRONTEND_ENV_LOCAL_B64_RUNTIME='${{ secrets.FRONTEND_ENV_LOCAL_B64 }}'
+          if [[ -n "${FRONTEND_ENV_LOCAL_PLAIN:-}" ]]; then
+            FRONTEND_ENV_LOCAL_B64_RUNTIME="$(printf '%s' "${FRONTEND_ENV_LOCAL_PLAIN}" | base64 | tr -d '\n')"
+          fi
           if [[ "${AUTH_MODE:-key}" == "key" ]]; then
             ssh \
               -o BatchMode=yes \
@@ -211,7 +226,17 @@ jobs:
                DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' \
                DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
                DEPLOY_LABEL='${{ github.sha }}' \
-               FRONTEND_ENV_LOCAL_B64='${{ secrets.FRONTEND_ENV_LOCAL_B64 }}' \
+               FRONTEND_ENV_LOCAL_B64='${FRONTEND_ENV_LOCAL_B64_RUNTIME}' \
+              NEXT_PUBLIC_SITE_URL='${{ secrets.NEXT_PUBLIC_SITE_URL }}' \
+              YANDEX_WEBMASTER_HOST_URL='${{ secrets.YANDEX_WEBMASTER_HOST_URL }}' \
+              YANDEX_WEBMASTER_FEED_URL='${{ secrets.YANDEX_WEBMASTER_FEED_URL }}' \
+              YANDEX_WEBMASTER_FEED_TYPE='${{ secrets.YANDEX_WEBMASTER_FEED_TYPE }}' \
+              YANDEX_WEBMASTER_FEED_REGION_IDS='${{ secrets.YANDEX_WEBMASTER_FEED_REGION_IDS }}' \
+              YANDEX_WEBMASTER_TIMEOUT_MS='${{ secrets.YANDEX_WEBMASTER_TIMEOUT_MS }}' \
+              YANDEX_WEBMASTER_OAUTH_TOKEN='${{ secrets.YANDEX_WEBMASTER_OAUTH_TOKEN }}' \
+              YANDEX_WEBMASTER_CLIENT_ID='${{ secrets.YANDEX_WEBMASTER_CLIENT_ID }}' \
+              YANDEX_WEBMASTER_CLIENT_SECRET='${{ secrets.YANDEX_WEBMASTER_CLIENT_SECRET }}' \
+              YANDEX_WEBMASTER_REFRESH_TOKEN='${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}' \
                /tmp/deploy_frontend_remote.sh"
           else
             SSHPASS="${DEPLOY_PASSWORD}" sshpass -e ssh \
@@ -225,6 +250,16 @@ jobs:
                DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' \
                DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
                DEPLOY_LABEL='${{ github.sha }}' \
-               FRONTEND_ENV_LOCAL_B64='${{ secrets.FRONTEND_ENV_LOCAL_B64 }}' \
+               FRONTEND_ENV_LOCAL_B64='${FRONTEND_ENV_LOCAL_B64_RUNTIME}' \
+                NEXT_PUBLIC_SITE_URL='${{ secrets.NEXT_PUBLIC_SITE_URL }}' \
+                YANDEX_WEBMASTER_HOST_URL='${{ secrets.YANDEX_WEBMASTER_HOST_URL }}' \
+                YANDEX_WEBMASTER_FEED_URL='${{ secrets.YANDEX_WEBMASTER_FEED_URL }}' \
+                YANDEX_WEBMASTER_FEED_TYPE='${{ secrets.YANDEX_WEBMASTER_FEED_TYPE }}' \
+                YANDEX_WEBMASTER_FEED_REGION_IDS='${{ secrets.YANDEX_WEBMASTER_FEED_REGION_IDS }}' \
+                YANDEX_WEBMASTER_TIMEOUT_MS='${{ secrets.YANDEX_WEBMASTER_TIMEOUT_MS }}' \
+                YANDEX_WEBMASTER_OAUTH_TOKEN='${{ secrets.YANDEX_WEBMASTER_OAUTH_TOKEN }}' \
+                YANDEX_WEBMASTER_CLIENT_ID='${{ secrets.YANDEX_WEBMASTER_CLIENT_ID }}' \
+                YANDEX_WEBMASTER_CLIENT_SECRET='${{ secrets.YANDEX_WEBMASTER_CLIENT_SECRET }}' \
+                YANDEX_WEBMASTER_REFRESH_TOKEN='${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}' \
                /tmp/deploy_frontend_remote.sh"
           fi

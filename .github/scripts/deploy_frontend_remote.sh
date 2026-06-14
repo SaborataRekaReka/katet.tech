@@ -22,6 +22,61 @@ normalize_value() {
   printf '%s' "${normalized}"
 }
 
+upsert_env_var() {
+  local env_file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp_file
+
+  tmp_file="$(mktemp)"
+  if [[ -f "${env_file}" ]]; then
+    grep -Ev "^${key}=" "${env_file}" > "${tmp_file}" || true
+  fi
+  printf '%s=%s\n' "${key}" "${value}" >> "${tmp_file}"
+  mv "${tmp_file}" "${env_file}"
+}
+
+apply_frontend_env_overrides() {
+  local env_file="$1"
+  local applied_count=0
+  local key
+  local value
+  local -a keys=(
+    NEXT_PUBLIC_SITE_URL
+    YANDEX_WEBMASTER_HOST_URL
+    YANDEX_WEBMASTER_FEED_URL
+    YANDEX_WEBMASTER_FEED_TYPE
+    YANDEX_WEBMASTER_FEED_REGION_IDS
+    YANDEX_WEBMASTER_TIMEOUT_MS
+    YANDEX_WEBMASTER_OAUTH_TOKEN
+    YANDEX_WEBMASTER_CLIENT_ID
+    YANDEX_WEBMASTER_CLIENT_SECRET
+    YANDEX_WEBMASTER_REFRESH_TOKEN
+  )
+
+  touch "${env_file}"
+
+  for key in "${keys[@]}"; do
+    value="${!key-}"
+    if [[ -z "${value}" ]]; then
+      continue
+    fi
+    value="$(normalize_value "${value}")"
+    if [[ -z "${value}" ]]; then
+      continue
+    fi
+    upsert_env_var "${env_file}" "${key}" "${value}"
+    applied_count=$((applied_count + 1))
+  done
+
+  if [[ "${applied_count}" -gt 0 ]]; then
+    chmod 600 "${env_file}"
+    echo "[deploy] Updated ${env_file} with ${applied_count} values from workflow secrets"
+  else
+    echo "[deploy] No workflow env overrides provided for frontend/.env.local"
+  fi
+}
+
 resolve_service_name() {
   local requested="$1"
   local compact
@@ -148,6 +203,8 @@ if [[ -n "${FRONTEND_ENV_LOCAL_B64:-}" ]]; then
 else
   echo "[deploy] FRONTEND_ENV_LOCAL_B64 is empty; keeping existing frontend/.env.local"
 fi
+
+apply_frontend_env_overrides "${TARGET_FRONTEND_DIR}/.env.local"
 
 cd "${TARGET_FRONTEND_DIR}"
 echo "[deploy] Running npm ci"

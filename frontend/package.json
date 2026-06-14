@@ -13,7 +13,8 @@
     "check:env": "node scripts/check-env.mjs",
     "verify:migration": "node scripts/verify-migration.mjs",
     "verify:source": "node scripts/verify-source-content.mjs",
-    "generate:work-illustrations": "node scripts/generate-work-type-illustrations.mjs"
+    "generate:work-illustrations": "node scripts/generate-work-type-illustrations.mjs",
+    "push:yandex-feed": "node scripts/push-yandex-feed.mjs"
   },
   "dependencies": {
     "@directus/visual-editing": "^2.0.1",

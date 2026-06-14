@@ -32,8 +32,23 @@ const primaryYandexCounterId = (process.env.NEXT_PUBLIC_YANDEX_COUNTER_IDS || "8
   .map((value) => value.trim())
   .find(Boolean) || "89111072";
 
+function resolveMetadataBase() {
+  const fallback = "https://katet.tech";
+  const value = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (!value) {
+    return new URL(fallback);
+  }
+
+  try {
+    return new URL(value);
+  } catch {
+    return new URL(fallback);
+  }
+}
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://katet.tech"),
+  metadataBase: resolveMetadataBase(),
   title: {
     default: "Катет — Аренда спецтехники в Москве и области",
     template: "%s",

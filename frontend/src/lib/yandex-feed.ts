@@ -28,6 +28,20 @@ type FeedRow = {
   work_types: FeedWorkType[] | null;
 };
 
+type DirectusEquipmentItem = {
+  id?: string | number | null;
+  title?: string | null;
+  slug?: string | null;
+  url_path?: string | null;
+  excerpt?: string | null;
+  body?: string | null;
+  price_amount?: string | number | null;
+  price_raw?: string | null;
+  price_alt?: string | null;
+  hours_per_shift?: number | string | null;
+  featured_file_id?: string | null;
+};
+
 const FALLBACK_CATEGORY_ID = "equipment";
 const FALLBACK_CATEGORY_NAME = "Equipment";
 const DESCRIPTION_LIMIT = 2500;
@@ -108,6 +122,66 @@ function buildDescription(row: FeedRow) {
   return truncate(normalizeText(row.title), DESCRIPTION_LIMIT);
 }
 
+function mapDirectusItemToFeedRow(item: DirectusEquipmentItem): FeedRow | null {
+  const id = String(item.id ?? "").trim();
+  if (!id) return null;
+
+  const slug = normalizeText(item.slug ?? id) || id;
+  const title = normalizeText(item.title ?? slug) || slug;
+  const urlPathRaw = String(item.url_path ?? "").trim();
+  const url_path = urlPathRaw || `/arenda_spetstekhniki/${slug}/`;
+
+  const hours = Number(item.hours_per_shift);
+
+  return {
+    id,
+    title,
+    slug,
+    url_path,
+    excerpt: item.excerpt ?? null,
+    body: item.body ?? null,
+    price_amount: item.price_amount === null || item.price_amount === undefined ? null : String(item.price_amount),
+    price_raw: item.price_raw ?? null,
+    price_alt: item.price_alt ?? null,
+    hours_per_shift: Number.isFinite(hours) && hours > 0 ? Math.trunc(hours) : null,
+    image_id: item.featured_file_id ?? null,
+    equipment_types: [],
+    work_types: [],
+  };
+}
+
+async function loadRowsFromDirectus() {
+  const url = new URL(`${directusUrl()}/items/equipment_items`);
+  url.searchParams.set("limit", "-1");
+  url.searchParams.set(
+    "fields",
+    "id,title,slug,url_path,excerpt,body,price_amount,price_raw,price_alt,hours_per_shift,featured_file_id",
+  );
+  url.searchParams.set("filter[status][_eq]", "publish");
+  url.searchParams.set("sort", "title");
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+      next: { revalidate: 900 },
+    });
+
+    if (!response.ok) {
+      return [] as FeedRow[];
+    }
+
+    const payload = await response.json() as { data?: DirectusEquipmentItem[] };
+    const items = Array.isArray(payload?.data) ? payload.data : [];
+    return items
+      .map(mapDirectusItemToFeedRow)
+      .filter((row): row is FeedRow => Boolean(row));
+  } catch {
+    return [] as FeedRow[];
+  }
+}
+
 function buildOfferXml(row: FeedRow, categoryId: string) {
   const { value: price, isFallback } = resolveOfferPrice(row);
 
@@ -148,7 +222,7 @@ function buildOfferXml(row: FeedRow, categoryId: string) {
 }
 
 export async function buildYandexEquipmentYml() {
-  const rows = await query<FeedRow>(
+  let rows = await query<FeedRow>(
     `
       SELECT
         e.id::text,
@@ -179,6 +253,10 @@ export async function buildYandexEquipmentYml() {
       ORDER BY e.legacy_id NULLS LAST, e.title
     `,
   );
+
+  if (rows.length === 0) {
+    rows = await loadRowsFromDirectus();
+  }
 
   const categories = new Map<string, string>();
   const offers: string[] = [];

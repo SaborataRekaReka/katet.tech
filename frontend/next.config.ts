@@ -4,27 +4,8 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   images: {
     dangerouslyAllowLocalIP: true,
-    qualities: [65, 75, 90, 95, 100],
-    localPatterns: [
-      {
-        pathname: "/assets/**",
-      },
-      {
-        pathname: "/assets/katet/services/generated/**",
-        search: "?v=20260530-1516",
-      },
-    ],
+    qualities: [75, 90, 95, 100],
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "katet.tech",
-        pathname: "/directus/assets/**",
-      },
-      {
-        protocol: "https",
-        hostname: "www.katet.tech",
-        pathname: "/directus/assets/**",
-      },
       {
         protocol: "http",
         hostname: "localhost",

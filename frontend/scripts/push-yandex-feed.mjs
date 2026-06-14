@@ -347,9 +347,9 @@ async function pushFeed(token, userId, hostId, feedUrl, feedType, regionIds, tim
 async function removeFeedByUrl(token, userId, hostId, feedUrl, timeoutMs) {
   const pathValue = `/user/${encodeURIComponent(userId)}/hosts/${encodeURIComponent(hostId)}/feeds/batch/remove`;
   const payloadCandidates = [
+    { urls: [feedUrl] },
     { feeds: [{ url: feedUrl }] },
     { feeds: [feedUrl] },
-    { urls: [feedUrl] },
   ];
 
   let lastError = null;

@@ -43,7 +43,7 @@ export function DirectoryPage({
                 href={link.url_path}
               >
                 {showIllustrations ? (
-                  <span className="directory-link__image u-pos-rel" aria-hidden="true">
+                  <span className="directory-link__image" aria-hidden="true">
                     {imageSrc ? <Image src={imageSrc} alt="" fill sizes="(max-width: 760px) 92vw, (max-width: 1020px) 45vw, 30vw" quality={95} /> : null}
                   </span>
                 ) : null}

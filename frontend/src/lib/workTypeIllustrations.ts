@@ -9,7 +9,6 @@ const MANUAL_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
 };
 
 const GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL = "/assets/katet/services/generated";
-const GENERATED_WORK_TYPE_ILLUSTRATIONS_VERSION = "20260530-1516";
 const GENERATED_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
   "demontazh-betonnogo-zabora": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/demontazh-betonnogo-zabora.png`,
   "gruzoperevozki-po-rossii": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/gruzoperevozki-po-rossii.png`,
@@ -37,11 +36,6 @@ const GENERATED_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
   "gruzovoy-trall-dlya-perevozki-traktora": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/gruzovoj-trall-dlya-perevozki-traktora.png`,
 };
 
-function withIllustrationVersion(url: string) {
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}v=${GENERATED_WORK_TYPE_ILLUSTRATIONS_VERSION}`;
-}
-
 export function workTypeSlugFromUrlPath(urlPath: string | null | undefined) {
   if (!urlPath) return null;
 
@@ -64,10 +58,7 @@ export function workTypeGeneratedIllustrationByUrlPath(urlPath: string | null | 
   const slug = workTypeSlugFromUrlPath(urlPath);
   if (!slug) return null;
 
-  const url = GENERATED_WORK_TYPE_ILLUSTRATIONS_BY_SLUG[slug] || null;
-  if (!url) return null;
-
-  return withIllustrationVersion(url);
+  return GENERATED_WORK_TYPE_ILLUSTRATIONS_BY_SLUG[slug] || null;
 }
 
 export function workTypeIllustrationByUrlPath(urlPath: string | null | undefined) {

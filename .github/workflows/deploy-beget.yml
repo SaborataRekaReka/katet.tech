@@ -348,3 +348,63 @@ jobs:
                 YANDEX_WEBMASTER_REFRESH_TOKEN='${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}' \
                 '${REMOTE_SCRIPT_PATH}'"
           fi
+
+      - name: Wait for production feed URL
+        env:
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          YANDEX_WEBMASTER_FEED_URL: ${{ secrets.YANDEX_WEBMASTER_FEED_URL }}
+        run: |
+          set -euo pipefail
+          FEED_URL="${YANDEX_WEBMASTER_FEED_URL:-}"
+          if [[ -z "${FEED_URL}" ]]; then
+            BASE_URL="${NEXT_PUBLIC_SITE_URL:-https://katet.tech}"
+            BASE_URL="${BASE_URL%/}"
+            FEED_URL="${BASE_URL}/yandex-feed.xml"
+          fi
+
+          echo "Waiting for feed URL: ${FEED_URL}"
+          for attempt in {1..20}; do
+            code="$(curl -L -s -o /dev/null -w "%{http_code}" "${FEED_URL}" || true)"
+            if [[ "${code}" == "200" ]]; then
+              echo "Feed URL is ready"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/20: HTTP ${code:-n/a}; retry in 10s"
+            sleep 10
+          done
+
+          echo "Feed URL did not become ready in time: ${FEED_URL}" >&2
+          exit 1
+
+      - name: Push feed to Yandex Webmaster
+        env:
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          YANDEX_WEBMASTER_HOST_URL: ${{ secrets.YANDEX_WEBMASTER_HOST_URL }}
+          YANDEX_WEBMASTER_HOST_ID: ${{ secrets.YANDEX_WEBMASTER_HOST_ID }}
+          YANDEX_WEBMASTER_FEED_URL: ${{ secrets.YANDEX_WEBMASTER_FEED_URL }}
+          YANDEX_WEBMASTER_FEED_TYPE: ${{ secrets.YANDEX_WEBMASTER_FEED_TYPE }}
+          YANDEX_WEBMASTER_FEED_REGION_IDS: ${{ secrets.YANDEX_WEBMASTER_FEED_REGION_IDS }}
+          YANDEX_WEBMASTER_TIMEOUT_MS: ${{ secrets.YANDEX_WEBMASTER_TIMEOUT_MS }}
+          YANDEX_WEBMASTER_OAUTH_TOKEN: ${{ secrets.YANDEX_WEBMASTER_OAUTH_TOKEN }}
+          YANDEX_WEBMASTER_CLIENT_ID: ${{ secrets.YANDEX_WEBMASTER_CLIENT_ID }}
+          YANDEX_WEBMASTER_CLIENT_SECRET: ${{ secrets.YANDEX_WEBMASTER_CLIENT_SECRET }}
+          YANDEX_WEBMASTER_REFRESH_TOKEN: ${{ secrets.YANDEX_WEBMASTER_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          has_direct_token="false"
+          if [[ -n "${YANDEX_WEBMASTER_OAUTH_TOKEN:-}" ]]; then
+            has_direct_token="true"
+          fi
+
+          has_refresh_triplet="false"
+          if [[ -n "${YANDEX_WEBMASTER_CLIENT_ID:-}" && -n "${YANDEX_WEBMASTER_CLIENT_SECRET:-}" && -n "${YANDEX_WEBMASTER_REFRESH_TOKEN:-}" ]]; then
+            has_refresh_triplet="true"
+          fi
+
+          if [[ "${has_direct_token}" != "true" && "${has_refresh_triplet}" != "true" ]]; then
+            echo "Skipping Yandex push: OAuth credentials are not configured"
+            exit 0
+          fi
+
+          npm --prefix ./frontend run push:yandex-feed

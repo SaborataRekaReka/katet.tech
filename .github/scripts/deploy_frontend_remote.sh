@@ -77,6 +77,108 @@ apply_frontend_env_overrides() {
   fi
 }
 
+parse_non_negative_int() {
+  local raw="$1"
+  local fallback="$2"
+
+  if [[ "${raw}" =~ ^[0-9]+$ ]]; then
+    printf '%s' "${raw}"
+  else
+    printf '%s' "${fallback}"
+  fi
+}
+
+available_kb() {
+  local target="$1"
+  df -Pk "${target}" | awk 'NR==2 {print $4}'
+}
+
+report_disk_usage() {
+  local target="$1"
+  echo "[deploy] Disk usage for ${target}:"
+  df -h "${target}" | awk 'NR==1 || NR==2'
+}
+
+prune_old_backups() {
+  local keep="$1"
+  local -a backups
+  local idx
+
+  mapfile -t backups < <(ls -1dt "${BACKUP_DIR}"/frontend-*.tgz 2>/dev/null || true)
+  for ((idx=keep; idx<${#backups[@]}; idx++)); do
+    rm -f "${backups[idx]}"
+  done
+}
+
+prune_old_releases() {
+  local keep="$1"
+  local -a releases
+  local idx
+
+  mapfile -t releases < <(ls -1dt "${RELEASES_DIR}"/frontend-* 2>/dev/null || true)
+  for ((idx=keep; idx<${#releases[@]}; idx++)); do
+    rm -rf "${releases[idx]}"
+  done
+}
+
+cleanup_disk_space() {
+  echo "[deploy] Running disk cleanup"
+  prune_old_backups "${BACKUP_KEEP}"
+  prune_old_releases "${RELEASE_KEEP}"
+  find "${LOGS_DIR}" -maxdepth 1 -type f -name '*.log' -mtime +"${LOG_KEEP_DAYS}" -delete || true
+  rm -rf "${TARGET_FRONTEND_DIR}/.next" || true
+  find /tmp -maxdepth 1 -type f -name 'frontend-*.tgz' -mtime +1 -delete || true
+  npm cache clean --force >/dev/null 2>&1 || true
+  report_disk_usage "${DEPLOY_APP_DIR}"
+}
+
+ensure_min_free_space() {
+  local min_free_mb="$1"
+  local min_free_kb=$((min_free_mb * 1024))
+  local current_kb
+
+  current_kb="$(available_kb "${DEPLOY_APP_DIR}")"
+  if [[ -z "${current_kb}" ]]; then
+    echo "[deploy] Failed to read available disk space" >&2
+    return 1
+  fi
+
+  if (( current_kb >= min_free_kb )); then
+    return 0
+  fi
+
+  echo "[deploy] Free space is low (${current_kb} KB), required at least ${min_free_kb} KB"
+  cleanup_disk_space
+  current_kb="$(available_kb "${DEPLOY_APP_DIR}")"
+
+  if (( current_kb < min_free_kb )); then
+    echo "[deploy] Not enough disk space after cleanup (${current_kb} KB available)" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+run_build_with_live_log() {
+  : > "${BUILD_LOG_PATH}"
+  npm run build > "${BUILD_LOG_PATH}" 2>&1 &
+  BUILD_PID=$!
+
+  # Stream remote build log back to GitHub Actions in real time.
+  tail -n +1 -f "${BUILD_LOG_PATH}" &
+  TAIL_PID=$!
+
+  set +e
+  wait "${BUILD_PID}"
+  BUILD_STATUS=$?
+  set -e
+
+  kill "${TAIL_PID}" >/dev/null 2>&1 || true
+  wait "${TAIL_PID}" 2>/dev/null || true
+
+  return "${BUILD_STATUS}"
+}
+
 resolve_service_name() {
   local requested="$1"
   local compact
@@ -174,13 +276,33 @@ LOGS_DIR="${DEPLOY_LOGS_DIR:-/opt/katet/logs}"
 TIMESTAMP="$(date +%F-%H%M%S)"
 DEPLOY_LABEL="${DEPLOY_LABEL:-manual}"
 BUILD_LOG_PATH="${LOGS_DIR}/frontend-build.log"
+BACKUP_KEEP="$(parse_non_negative_int "${DEPLOY_BACKUP_KEEP:-5}" 5)"
+RELEASE_KEEP="$(parse_non_negative_int "${DEPLOY_RELEASE_KEEP:-5}" 5)"
+LOG_KEEP_DAYS="$(parse_non_negative_int "${DEPLOY_LOG_KEEP_DAYS:-14}" 14)"
+MIN_BUILD_FREE_MB="$(parse_non_negative_int "${DEPLOY_MIN_BUILD_FREE_MB:-1536}" 1536)"
 
 mkdir -p "${BACKUP_DIR}" "${RELEASES_DIR}" "${LOGS_DIR}" "${DEPLOY_APP_DIR}"
 
 TARGET_FRONTEND_DIR="${DEPLOY_APP_DIR}/frontend"
+report_disk_usage "${DEPLOY_APP_DIR}"
+cleanup_disk_space
+
+if ! ensure_min_free_space "${MIN_BUILD_FREE_MB}"; then
+  echo "[deploy] Aborting deploy due to low free space before backup/build" >&2
+  exit 1
+fi
+
 if [[ -d "${TARGET_FRONTEND_DIR}" ]]; then
-  tar -czf "${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz" -C "${DEPLOY_APP_DIR}" frontend
-  echo "[deploy] Backup created: ${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz"
+  available_before_backup_kb="$(available_kb "${DEPLOY_APP_DIR}")"
+  frontend_size_kb="$(du -sk "${TARGET_FRONTEND_DIR}" | awk '{print $1}')"
+  required_for_backup_kb=$((frontend_size_kb + 256000))
+
+  if (( available_before_backup_kb > required_for_backup_kb )); then
+    tar -czf "${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz" -C "${DEPLOY_APP_DIR}" frontend
+    echo "[deploy] Backup created: ${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz"
+  else
+    echo "[deploy] Skipping backup due to low free space (${available_before_backup_kb} KB available)"
+  fi
 fi
 
 RELEASE_DIR="${RELEASES_DIR}/frontend-${DEPLOY_LABEL}-${TIMESTAMP}"
@@ -210,27 +332,31 @@ cd "${TARGET_FRONTEND_DIR}"
 echo "[deploy] Running npm ci"
 npm ci --no-audit --no-fund
 
-echo "[deploy] Running npm run build (log: ${BUILD_LOG_PATH})"
-: > "${BUILD_LOG_PATH}"
-npm run build > "${BUILD_LOG_PATH}" 2>&1 &
-BUILD_PID=$!
-
-# Stream remote build log back to GitHub Actions in real time.
-tail -n +1 -f "${BUILD_LOG_PATH}" &
-TAIL_PID=$!
-
-set +e
-wait "${BUILD_PID}"
-BUILD_STATUS=$?
-set -e
-
-kill "${TAIL_PID}" >/dev/null 2>&1 || true
-wait "${TAIL_PID}" 2>/dev/null || true
-
-if [[ "${BUILD_STATUS}" -ne 0 ]]; then
-  echo "[deploy] Build failed. Last lines from ${BUILD_LOG_PATH}:" >&2
-  tail -n 200 "${BUILD_LOG_PATH}" >&2 || true
+if ! ensure_min_free_space "${MIN_BUILD_FREE_MB}"; then
+  echo "[deploy] Aborting build due to low free space after npm ci" >&2
   exit 1
+fi
+
+echo "[deploy] Running npm run build (log: ${BUILD_LOG_PATH})"
+if ! run_build_with_live_log; then
+  if grep -Eqi 'No space left on device|StorageFull|ENOSPC' "${BUILD_LOG_PATH}"; then
+    echo "[deploy] Build failed due to disk pressure, retrying once after cleanup"
+    cleanup_disk_space
+    if ! ensure_min_free_space "${MIN_BUILD_FREE_MB}"; then
+      echo "[deploy] Still not enough free space for build retry" >&2
+      tail -n 200 "${BUILD_LOG_PATH}" >&2 || true
+      exit 1
+    fi
+    if ! run_build_with_live_log; then
+      echo "[deploy] Build retry failed. Last lines from ${BUILD_LOG_PATH}:" >&2
+      tail -n 200 "${BUILD_LOG_PATH}" >&2 || true
+      exit 1
+    fi
+  else
+    echo "[deploy] Build failed. Last lines from ${BUILD_LOG_PATH}:" >&2
+    tail -n 200 "${BUILD_LOG_PATH}" >&2 || true
+    exit 1
+  fi
 fi
 
 echo "[deploy] Restarting service: ${RESOLVED_SERVICE_NAME}"

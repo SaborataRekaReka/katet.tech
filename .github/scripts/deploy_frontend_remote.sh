@@ -298,8 +298,21 @@ if [[ -d "${TARGET_FRONTEND_DIR}" ]]; then
   required_for_backup_kb=$((frontend_size_kb + 256000))
 
   if (( available_before_backup_kb > required_for_backup_kb )); then
-    tar -czf "${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz" -C "${DEPLOY_APP_DIR}" frontend
-    echo "[deploy] Backup created: ${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz"
+    backup_path="${BACKUP_DIR}/frontend-${TIMESTAMP}.tgz"
+    if tar \
+      --warning=no-file-changed \
+      --ignore-failed-read \
+      --exclude='frontend/.next' \
+      --exclude='frontend/node_modules' \
+      -czf "${backup_path}" \
+      -C "${DEPLOY_APP_DIR}" frontend; then
+      echo "[deploy] Backup created: ${backup_path}"
+    else
+      echo "[deploy] Backup finished with warnings; continuing deploy" >&2
+      if [[ -f "${backup_path}" ]]; then
+        echo "[deploy] Backup artifact (possibly partial): ${backup_path}" >&2
+      fi
+    fi
   else
     echo "[deploy] Skipping backup due to low free space (${available_before_backup_kb} KB available)"
   fi

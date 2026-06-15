@@ -1,8 +1,9 @@
 import "server-only";
 
 import { run } from "./db";
+import { loadContext, normalizeContextType } from "./seed";
 import { chatJson, cosineSimilarity, embed, getLastEmbeddingError } from "./openai";
-import type { Intent, PageType } from "./types";
+import type { CompanyContext, Intent, PageType } from "./types";
 
 /**
  * AI semantic keyword clusterizer.
@@ -418,7 +419,27 @@ function splitOversizedClusters(clusters: DraftCluster[]): DraftCluster[] {
   return result;
 }
 
+function compactCompanyContext(context: CompanyContext[]): Array<{ type: string; point: string; value: string; note?: string }> {
+  const out: Array<{ type: string; point: string; value: string; note?: string }> = [];
+
+  for (const row of context.slice(0, 60)) {
+    const value = String(row.name || "").trim();
+    if (!value) continue;
+    const point = String(row.context_type || "").trim();
+    const noteRaw = typeof row.description === "string" ? row.description.trim() : "";
+    out.push({
+      type: normalizeContextType(point),
+      point,
+      value,
+      note: noteRaw ? noteRaw.slice(0, 220) : undefined,
+    });
+  }
+
+  return out;
+}
+
 async function buildLlmClusters(rows: NormRow[]): Promise<DraftCluster[] | null> {
+  const companyContext = compactCompanyContext(await loadContext().catch(() => []));
   const partitions = new Map<string, NormRow[]>();
   for (const row of rows) {
     const key = partitionKey(row);
@@ -439,10 +460,15 @@ async function buildLlmClusters(rows: NormRow[]): Promise<DraftCluster[] | null>
       const response = await chatJson<LlmClusterResponse>({
         modelSlot: "cluster",
         system:
-          "Ты SEO-аналитик для сайта аренды спецтехники. Разбей поисковые запросы на смысловые кластеры уровня одной страницы или одной статьи. Не делай общий кластер 'спецтехника', если внутри есть разные темы: аренда, цена, ремонт, продажа, документы, виды техники, конкретные машины, маркетплейсы, вопросы. Коммерческие, информационные и сравнительные запросы не смешивай. Верни JSON: {\"clusters\":[{\"key\":\"latin-kebab-key\",\"name\":\"короткое название\",\"ids\":[1,2]}]}. Каждый id должен быть ровно в одном кластере.",
+          "Ты SEO-аналитик. Разбей поисковые запросы на смысловые кластеры уровня одной страницы или одной статьи. " +
+          "Учитывай бизнес-контекст компании из поля company_context: какие услуги/техника/регионы релевантны, какие темы исключены. " +
+          "Не делай общий кластер 'спецтехника', если внутри есть разные темы: аренда, цена, ремонт, продажа, документы, виды техники, конкретные машины, маркетплейсы, вопросы. " +
+          "Коммерческие, информационные и сравнительные запросы не смешивай. " +
+          "Верни JSON: {\"clusters\":[{\"key\":\"latin-kebab-key\",\"name\":\"короткое название\",\"ids\":[1,2]}]}. Каждый id должен быть ровно в одном кластере.",
         user: JSON.stringify({
           intent_family: family,
           region: batch[0]?.region ?? null,
+          company_context: companyContext,
           queries: batch.map((row) => ({
             id: row.id,
             keyword: row.keyword,

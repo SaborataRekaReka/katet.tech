@@ -10,10 +10,13 @@ export async function POST(request: Request) {
   const denied = await guard(request);
   if (denied) return denied;
 
-  const body = (await request.json().catch(() => ({}))) as { rebuild?: boolean };
+  const body = (await request.json().catch(() => ({}))) as { rebuild?: boolean; requireAi?: boolean };
 
   const jobId = await createJob("csv_semantics_pipeline", 4);
-  void runImportedSemanticsPipeline(jobId, { rebuildClusters: Boolean(body.rebuild) });
+  void runImportedSemanticsPipeline(jobId, {
+    rebuildClusters: Boolean(body.rebuild),
+    requireAi: body.requireAi === true,
+  });
 
   return NextResponse.json({ jobId });
 }

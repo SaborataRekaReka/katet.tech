@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { guard } from "../../_guard";
 import { parseCsv } from "@/lib/seo/wordstat";
 import { ingestRows } from "@/lib/seo/collect";
+import { getSemanticsCleaningConfig } from "@/lib/seo/settings";
+import { cleanAndNormalize } from "@/lib/seo/clean";
 
 export const runtime = "nodejs";
 
@@ -14,6 +16,17 @@ function previewImportContent(content: unknown): string {
     if (Array.isArray(value)) return value.map((line) => String(line ?? "")).join("\n");
   }
   return String(content ?? "");
+}
+
+function normalizeMinusWords(words: string[] | undefined): string[] {
+  if (!Array.isArray(words)) return [];
+  return words.map((word) => String(word || "").trim().toLowerCase()).filter(Boolean);
+}
+
+function containsMinusWord(keyword: string, minusWords: string[]): boolean {
+  if (!keyword || minusWords.length === 0) return false;
+  const text = keyword.toLowerCase();
+  return minusWords.some((minus) => text.includes(minus));
 }
 
 export async function POST(request: Request) {
@@ -37,6 +50,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const imported = await ingestRows(body.seedTerm ?? "csv-import", rows);
-  return NextResponse.json({ imported, parsed: rows.length, mode: "raw_only" });
+  const cleaning = await getSemanticsCleaningConfig();
+  const minusWords = normalizeMinusWords(cleaning.junk_words);
+  const filteredRows = rows.filter((row) => !containsMinusWord(row.keyword, minusWords));
+  const filteredByMinusWords = rows.length - filteredRows.length;
+
+  if (filteredRows.length === 0) {
+    return NextResponse.json({
+      imported: 0,
+      parsed: rows.length,
+      filteredByMinusWords,
+      cleaned: 0,
+      mode: "raw_only",
+    });
+  }
+
+  const imported = await ingestRows(body.seedTerm ?? "csv-import", filteredRows);
+  const cleaned = await cleanAndNormalize(cleaning.min_frequency, { reprocess: false, cleaning });
+
+  return NextResponse.json({
+    imported,
+    parsed: rows.length,
+    filteredByMinusWords,
+    cleaned,
+    mode: "raw_only",
+  });
 }

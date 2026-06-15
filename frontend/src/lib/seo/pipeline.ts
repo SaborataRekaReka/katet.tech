@@ -263,7 +263,7 @@ export async function runFullPipeline(jobId: number, options: FullRunOptions = {
 /** Process already imported CSV/raw semantics without calling external Wordstat APIs. */
 export async function runImportedSemanticsPipeline(
   jobId: number,
-  options: { rebuildClusters?: boolean } = {},
+  options: { rebuildClusters?: boolean; requireAi?: boolean } = {},
 ): Promise<void> {
   try {
     resetSiteCache();
@@ -282,11 +282,13 @@ export async function runImportedSemanticsPipeline(
       2,
       options.rebuildClusters
         ? "ИИ-пересборка кластеров по смыслу запросов"
-        : "Кластеризация импортированной семантики",
+        : options.requireAi
+          ? "ИИ-обновление кластеров из новых запросов"
+          : "Кластеризация импортированной семантики",
     );
     const clusters = await clusterize({
       rebuild: options.rebuildClusters,
-      requireAi: options.rebuildClusters,
+      requireAi: options.requireAi ?? options.rebuildClusters,
     });
     await setStep(jobId, "cluster", 2, `Создано кластеров: ${clusters.created} (${clusterMethodLabel(clusters.method)})`);
 

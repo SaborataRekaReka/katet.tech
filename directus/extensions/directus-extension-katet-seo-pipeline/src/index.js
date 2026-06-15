@@ -208,7 +208,7 @@ export default defineEndpoint((router, { database }) => {
     const page = toInt(req.query.page, 1, 1, 10000);
     const pageSize = toInt(req.query.pageSize, 100, 20, 300);
 
-    const where = [];
+    const where = ["n.is_relevant = TRUE"];
     const bindings = [];
 
     if (q) {

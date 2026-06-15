@@ -55,27 +55,15 @@
         <div class="stats-grid">
           <button type="button" class="stat-card" @click="selectTab('queries')">
             <span class="stat-value">{{ summary.rawTotal }}</span>
-            <span class="stat-label">Raw запросы</span>
-          </button>
-          <button type="button" class="stat-card" @click="selectTab('semantics')">
-            <span class="stat-value">{{ summary.normalizedTotal }}</span>
-            <span class="stat-label">Нормализованные</span>
+            <span class="stat-label">Сырые запросы</span>
           </button>
           <button type="button" class="stat-card" @click="selectTab('clusters')">
             <span class="stat-value">{{ summary.clustersTotal }}</span>
             <span class="stat-label">Кластеры</span>
           </button>
-          <button type="button" class="stat-card" @click="selectTab('plan')">
-            <span class="stat-value">{{ summary.planPending }}</span>
-            <span class="stat-label">План: на проверке</span>
-          </button>
           <button type="button" class="stat-card" @click="selectTab('generate')">
-            <span class="stat-value">{{ summary.planApproved }}</span>
-            <span class="stat-label">План: одобрено</span>
-          </button>
-          <button type="button" class="stat-card" @click="selectTab('articles')">
             <span class="stat-value">{{ summary.articlesDraft }}</span>
-            <span class="stat-label">Черновики статей</span>
+            <span class="stat-label">Сгенерированные статьи</span>
           </button>
           <button type="button" class="stat-card" @click="selectTab('blog')">
             <span class="stat-value">{{ summary.postsPublished }}</span>
@@ -198,6 +186,25 @@
       <!-- QUERIES -->
       <section v-else-if="activeTab === 'queries'" class="panel">
         <div class="card">
+          <div class="card-head"><v-icon name="upload_file" small /><h3>Импорт запросов</h3></div>
+          <p class="muted">Формат: «фраза;частотность» или одна фраза в строке. Запросы с минус-словами автоматически исключаются сразу при импорте (без ИИ).</p>
+          <div class="toolbar">
+            <input v-model="importState.seedTerm" type="text" placeholder="Seed term" class="control" />
+            <input v-model="importState.region" type="text" placeholder="Регион" class="control" />
+            <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" class="control control-grow" @change="handleImportFileChange" />
+            <v-button small :loading="busy.import" :disabled="!importState.content.trim()" @click="runImport">Импортировать</v-button>
+          </div>
+          <textarea v-model="importState.content" rows="5" placeholder="Пример: аренда экскаватора;1200" class="control control-area" />
+          <p v-if="importState.fileName" class="muted small">Файл загружен: {{ importState.fileName }}</p>
+          <p v-if="importState.result" class="muted small">
+            Разобрано: {{ importState.result.parsed ?? importState.result.imported }}, импортировано: {{ importState.result.imported }}
+            <span v-if="importState.result.filteredByMinusWords > 0">, исключено по минус-словам: {{ importState.result.filteredByMinusWords }}</span>
+            <span v-if="importState.result.cleaned !== null && importState.result.cleaned !== undefined">, обработано: {{ importState.result.cleaned }}</span>
+          </p>
+          <v-notice v-if="importState.error" type="danger" class="block">{{ importState.error }}</v-notice>
+        </div>
+
+        <div class="card">
           <div class="toolbar">
             <input v-model="queryFilters.q" type="text" placeholder="Поиск по тексту запроса" class="control control-grow" />
             <select v-model.number="queryFilters.pageSize" class="control">
@@ -211,8 +218,7 @@
             <v-button small secondary @click="resetQueriesFilters">Сбросить</v-button>
             <span class="muted small">Всего: {{ numberFormat(queriesPage.total) }}</span>
             <span class="spacer" />
-            <v-button small secondary @click="goToSemanticsImport"><v-icon name="upload_file" small left />Импорт</v-button>
-            <v-button small :loading="busy.clusterize" @click="startClusterize"><v-icon name="hub" small left />ИИ-кластеризация</v-button>
+            <v-button small :loading="busy.clusterize" @click="startClusterize"><v-icon name="hub" small left />Обновить кластеры</v-button>
           </div>
 
           <v-progress-linear v-if="clusterizeJob.running" :value="clusterizeJob.progress" rounded class="progress" />
@@ -276,7 +282,7 @@
           <div v-if="queriesPage.items.length === 0" class="empty-state">
             <v-icon name="search_off" small />
             <p class="empty-title">Запросов по текущему фильтру нет</p>
-            <p class="empty-text">Импортируйте семантику или измените условия фильтра.</p>
+            <p class="empty-text">Импортируйте запросы в верхнем блоке или измените условия фильтра.</p>
           </div>
 
           <div v-if="queriesPage.items.length > 0" class="pagination">
@@ -541,7 +547,10 @@
         <div class="card">
           <div class="card-head card-head--between">
             <div class="card-head"><v-icon name="bubble_chart" small /><h3>Кластеры</h3></div>
-            <v-button x-small secondary @click="loadSemanticsClusters"><v-icon name="refresh" small left />Обновить</v-button>
+            <div class="row">
+              <v-button x-small :loading="busy.clusterize" @click="startClusterize"><v-icon name="hub" small left />Обновить кластеры</v-button>
+              <v-button x-small secondary @click="loadSemanticsClusters"><v-icon name="refresh" small left />Обновить список</v-button>
+            </div>
           </div>
           <div class="table-scroll">
             <table class="table">
@@ -743,13 +752,10 @@
             <p class="empty-text">Все темы закрыты или кластеры ещё не собраны.</p>
           </div>
         </div>
-      </section>
 
-      <!-- ARTICLES (drafts) -->
-      <section v-else-if="activeTab === 'articles'" class="panel">
         <div class="card">
           <div class="card-head card-head--between">
-            <div class="card-head"><v-icon name="edit_note" small /><h3>Черновики и статьи конвейера</h3></div>
+            <div class="card-head"><v-icon name="edit_note" small /><h3>Сгенерированные статьи</h3></div>
             <div class="row">
               <select v-model="articleStatus" class="control">
                 <option v-for="option in articleStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
@@ -1005,9 +1011,7 @@ const navGroups = [
     label: "Конвейер",
     items: [
       { id: "queries", label: "Запросы", icon: "manage_search" },
-      { id: "semantics", label: "Семантика", icon: "spellcheck" },
       { id: "clusters", label: "Кластеры", icon: "bubble_chart" },
-      { id: "plan", label: "Контент-план", icon: "fact_check" },
       { id: "generate", label: "Генерация", icon: "auto_awesome" },
     ],
   },
@@ -1015,7 +1019,6 @@ const navGroups = [
     key: "publications",
     label: "Публикации",
     items: [
-      { id: "articles", label: "Черновики статей", icon: "edit_note" },
       { id: "blog", label: "Блог сайта", icon: "article" },
     ],
   },
@@ -1031,12 +1034,9 @@ const navGroups = [
 
 const tabMeta = {
   overview: { title: "Обзор", intro: "Сводка конвейера, быстрые действия и доступ к SEO API." },
-  queries: { title: "Запросы", intro: "Пул нормализованных запросов: фильтрация, объединение в кластеры, удаление." },
-  semantics: { title: "Семантика", intro: "Импорт, очистка и просмотр сырой и нормализованной семантики." },
-  clusters: { title: "Кластеры", intro: "Кластеры запросов, покрытие сайтом и состав ключевых фраз." },
-  plan: { title: "Контент-план", intro: "Очередь предложений: проверка, брифы и генерация статей." },
-  generate: { title: "Генерация", intro: "Создание черновиков статей из кластеров." },
-  articles: { title: "Черновики статей", intro: "Статьи конвейера: редактирование, публикация и связь с записями блога." },
+  queries: { title: "Запросы", intro: "Импорт сырых запросов и рабочий список релевантных фраз без минус-слов." },
+  clusters: { title: "Кластеры", intro: "Кластеры запросов, состав фраз и обновление из новых некластеризированных запросов." },
+  generate: { title: "Генерация", intro: "Выбор кластеров, генерация статей и публикация в одном разделе." },
   blog: { title: "Блог сайта", intro: "Записи блога в Directus: статусы, рубрики и переход к редактору." },
   context: { title: "Контекст компании", intro: "Произвольные пары «поинт → значение» для SEO-конвейера." },
   jobs: { title: "Задачи", intro: "Мониторинг фоновых задач и их логов." },
@@ -1294,19 +1294,15 @@ const contextItemsSorted = computed(() => [...contextItems.value].sort((a, b) =>
 const loadedTabs = reactive({
   overview: false,
   queries: false,
-  semantics: false,
   clusters: false,
-  plan: false,
   generate: false,
-  articles: false,
   blog: false,
   context: false,
   jobs: false,
 });
 
 function navBadge(id) {
-  if (id === "plan" && summary.planPending > 0) return summary.planPending;
-  if (id === "articles" && summary.articlesDraft > 0) return summary.articlesDraft;
+  if (id === "generate" && summary.articlesDraft > 0) return summary.articlesDraft;
   if (id === "jobs" && summary.jobsRunning > 0) return summary.jobsRunning;
   return null;
 }
@@ -1818,25 +1814,33 @@ function deleteOneQuery(id) {
 }
 
 async function startClusterize() {
-  if (!window.confirm("Пересобрать кластеры с помощью ИИ? Существующие статьи останутся в разделе «Статьи».")) return;
+  if (!window.confirm("Обновить кластеры из новых некластеризированных запросов с помощью ИИ?")) return;
   busy.clusterize = true;
   try {
-    const data = await api("/clusterize", { method: "POST", body: { rebuild: true } });
+    const data = await api("/clusterize", { method: "POST", body: { rebuild: false, requireAi: true } });
     const jobId = Number(data.jobId || 0);
     if (!jobId) throw new Error("Не удалось получить ID задачи");
 
     clusterizeJob.jobId = jobId;
     clusterizeJob.running = true;
     clusterizeJob.progress = 0;
-    clusterizeJob.message = "Запуск ИИ-кластеризации…";
+    clusterizeJob.message = "Обновление кластеров…";
 
-    setInfo(`ИИ-кластеризация запущена. Job #${jobId}`);
+    setInfo(`Обновление кластеров запущено. Job #${jobId}`);
     await loadJobs();
     await watchJob(jobId, async () => {
-      await Promise.all([loadSummary(), loadQueries(), loadClusterTargets(), loadSemanticsStats(), loadSemanticsClusters(), loadPlan()]);
+      await Promise.all([
+        loadSummary(),
+        loadQueries(),
+        loadClusterTargets(),
+        loadSemanticsClusters(),
+        loadPlan(),
+        loadGeneratableClusters(),
+        loadArticles(),
+      ]);
     });
   } catch (err) {
-    setError(err instanceof Error ? err.message : "Не удалось запустить кластеризацию");
+    setError(err instanceof Error ? err.message : "Не удалось обновить кластеры");
   } finally {
     busy.clusterize = false;
   }
@@ -2218,10 +2222,15 @@ async function runImport() {
     importState.result = {
       imported: Number(data.imported || 0),
       parsed: data.parsed != null ? Number(data.parsed) : null,
+      filteredByMinusWords: Number(data.filteredByMinusWords || 0),
+      cleaned: data.cleaned != null ? Number(data.cleaned) : null,
       mode: data.mode || null,
     };
-    setInfo(`Импорт завершён: ${importState.result.imported} строк`);
-    await Promise.all([loadSummary(), loadSemanticsStats(), loadSemanticsRaw(), loadSemanticsNormalized(), loadQueries()]);
+    const removedPart = importState.result.filteredByMinusWords > 0
+      ? `, исключено по минус-словам: ${importState.result.filteredByMinusWords}`
+      : "";
+    setInfo(`Импорт завершён: ${importState.result.imported} строк${removedPart}`);
+    await Promise.all([loadSummary(), loadQueries(), loadClusterTargets()]);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ошибка импорта";
     importState.error = message;
@@ -2535,7 +2544,7 @@ async function openEditor(articleId) {
     editor.bodyHtml = data.body_html || "";
     editor.status = data.status || "draft";
     editor.publishedPostId = data.published_post_id || null;
-    activeTab.value = "articles";
+    activeTab.value = "generate";
   } catch (err) {
     setError(err instanceof Error ? err.message : "Не удалось загрузить статью");
   }
@@ -2717,10 +2726,6 @@ async function removeContextItem(id) {
   }
 }
 
-function goToSemanticsImport() {
-  activeTab.value = "semantics";
-}
-
 function goToGenerateTab() {
   activeTab.value = "generate";
 }
@@ -2745,37 +2750,14 @@ async function ensureTabLoaded(tabId) {
     loadedTabs.queries = true;
     return;
   }
-  if (tabId === "semantics" && !loadedTabs.semantics) {
-    await Promise.all([
-      loadSemanticsStats(),
-      loadSemanticsRaw(),
-      loadSemanticsNormalized(),
-      loadSemanticsClusters(),
-      loadCleaningSettings(),
-      loadOpenAiKey(),
-      reloadLlmSettings({ silent: true }),
-    ]);
-    loadedTabs.semantics = true;
-    return;
-  }
   if (tabId === "clusters" && !loadedTabs.clusters) {
     await Promise.all([loadSemanticsClusters(), loadSiteIndex()]);
     loadedTabs.clusters = true;
     return;
   }
-  if (tabId === "plan" && !loadedTabs.plan) {
-    await loadPlan();
-    loadedTabs.plan = true;
-    return;
-  }
   if (tabId === "generate" && !loadedTabs.generate) {
-    await loadGeneratableClusters();
+    await Promise.all([loadGeneratableClusters(), loadArticles()]);
     loadedTabs.generate = true;
-    return;
-  }
-  if (tabId === "articles" && !loadedTabs.articles) {
-    await loadArticles();
-    loadedTabs.articles = true;
     return;
   }
   if (tabId === "blog" && !loadedTabs.blog) {
@@ -2798,12 +2780,8 @@ watch(activeTab, (tabId) => {
   void ensureTabLoaded(tabId);
 });
 
-watch(planStatus, () => {
-  if (activeTab.value === "plan") void loadPlan();
-});
-
 watch(articleStatus, () => {
-  if (activeTab.value === "articles") void loadArticles();
+  if (activeTab.value === "generate") void loadArticles();
 });
 
 onMounted(async () => {

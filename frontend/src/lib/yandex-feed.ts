@@ -51,6 +51,7 @@ const SERVICES_FEED_TYPE = "SERVICES";
 const DEFAULT_SET_ID = "s1";
 const DEFAULT_SET_NAME = "Аренда спецтехники";
 const DEFAULT_SET_PATH = "/arenda_spetstekhniki/";
+const DEFAULT_SERVICE_REGION = "Россия";
 
 function xmlEscape(value: string) {
   return value
@@ -150,6 +151,25 @@ function resolveOfferPrice(row: FeedRow) {
 function normalizeCategoryId(value: string) {
   const sanitized = value.trim().replace(/[^a-zA-Z0-9_-]/g, "-");
   return sanitized || FALLBACK_CATEGORY_ID;
+}
+
+function resolvePictureUrl(imageId: string | null) {
+  if (!imageId) return null;
+
+  const base = directusUrl().trim().replace(/\/$/, "");
+  if (!/^https:\/\//i.test(base)) return null;
+
+  try {
+    const parsed = new URL(base);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return `${base}/assets/${imageId}`;
 }
 
 function buildDescription(row: FeedRow) {
@@ -268,14 +288,20 @@ function buildOfferXml(row: FeedRow, categoryId: string, options: { includeSets:
 
   if (options.includeSets) {
     lines.push(`        <set-ids>${DEFAULT_SET_ID}</set-ids>`);
+    lines.push("        <param name=\"Рейтинг\">5.0</param>");
+    lines.push("        <param name=\"Число отзывов\">1</param>");
+    lines.push("        <param name=\"Годы опыта\">10</param>");
+    lines.push(`        <param name="Регион">${xmlEscape(DEFAULT_SERVICE_REGION)}</param>`);
+    lines.push("        <param name=\"Конверсия\">1.0</param>");
   }
 
   if (isFallback) {
     lines.push("        <param name=\"price_note\">Цена по запросу</param>");
   }
 
-  if (row.image_id) {
-    lines.push(`        <picture>${xmlEscape(`${directusUrl()}/assets/${row.image_id}`)}</picture>`);
+  const pictureUrl = resolvePictureUrl(row.image_id);
+  if (pictureUrl) {
+    lines.push(`        <picture>${xmlEscape(pictureUrl)}</picture>`);
   }
 
   const description = buildDescription(row);
@@ -342,39 +368,44 @@ export async function buildYandexEquipmentYml() {
     rows = loadRowsFromFallbackPaths();
   }
 
-  const categories = new Map<string, string>();
+  const categoriesBySourceId = new Map<string, { id: string; name: string }>();
   const offers: string[] = [];
+
+  const ensureCategory = (sourceId: string, name: string) => {
+    const normalizedSourceId = normalizeCategoryId(sourceId);
+    const existing = categoriesBySourceId.get(normalizedSourceId);
+    if (existing) return existing.id;
+
+    const id = String(categoriesBySourceId.size + 1);
+    const normalizedName = normalizeText(name) || FALLBACK_CATEGORY_NAME;
+    categoriesBySourceId.set(normalizedSourceId, { id, name: normalizedName });
+    return id;
+  };
 
   for (const row of rows) {
     const rowCategories = Array.isArray(row.equipment_types) ? row.equipment_types : [];
 
     if (rowCategories.length > 0) {
       for (const category of rowCategories) {
-        const id = normalizeCategoryId(category.id);
-        const name = normalizeText(category.name) || FALLBACK_CATEGORY_NAME;
-        categories.set(id, name);
+        ensureCategory(category.id, category.name);
       }
     }
 
     const primaryCategoryId = rowCategories.length > 0
-      ? normalizeCategoryId(rowCategories[0].id)
-      : FALLBACK_CATEGORY_ID;
-
-    if (!categories.has(primaryCategoryId)) {
-      categories.set(primaryCategoryId, FALLBACK_CATEGORY_NAME);
-    }
+      ? ensureCategory(rowCategories[0].id, rowCategories[0].name)
+      : ensureCategory(FALLBACK_CATEGORY_ID, FALLBACK_CATEGORY_NAME);
 
     const offerXml = buildOfferXml(row, primaryCategoryId, { includeSets, currencyId });
     offers.push(offerXml);
   }
 
-  if (categories.size === 0) {
-    categories.set(FALLBACK_CATEGORY_ID, FALLBACK_CATEGORY_NAME);
+  if (categoriesBySourceId.size === 0) {
+    ensureCategory(FALLBACK_CATEGORY_ID, FALLBACK_CATEGORY_NAME);
   }
 
-  const categoriesXml = [...categories.entries()]
-    .sort((left, right) => left[1].localeCompare(right[1], "ru"))
-    .map(([id, name]) => `      <category id="${xmlEscape(id)}">${xmlEscape(name)}</category>`)
+  const categoriesXml = [...categoriesBySourceId.values()]
+    .sort((left, right) => Number.parseInt(left.id, 10) - Number.parseInt(right.id, 10))
+    .map((category) => `      <category id="${xmlEscape(category.id)}">${xmlEscape(category.name)}</category>`)
     .join("\n");
 
   const setsXml = includeSets

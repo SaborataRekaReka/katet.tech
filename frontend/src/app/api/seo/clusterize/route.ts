@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { guard } from "../_guard";
-import { createJob, runImportedSemanticsPipeline } from "@/lib/seo/pipeline";
+import { createSingleFlightJob, runImportedSemanticsPipeline } from "@/lib/seo/pipeline";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,11 +12,13 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as { rebuild?: boolean; requireAi?: boolean };
 
-  const jobId = await createJob("csv_semantics_pipeline", 4);
-  void runImportedSemanticsPipeline(jobId, {
-    rebuildClusters: Boolean(body.rebuild),
-    requireAi: body.requireAi === true,
-  });
+  const started = await createSingleFlightJob("csv_semantics_pipeline", 4);
+  if (!started.alreadyRunning) {
+    void runImportedSemanticsPipeline(started.jobId, {
+      rebuildClusters: Boolean(body.rebuild),
+      requireAi: body.requireAi === true,
+    });
+  }
 
-  return NextResponse.json({ jobId });
+  return NextResponse.json({ jobId: started.jobId, alreadyRunning: started.alreadyRunning });
 }

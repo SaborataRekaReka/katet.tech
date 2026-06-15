@@ -40,6 +40,7 @@ type ClusterRow = {
   primary_keyword: string | null;
   total_frequency: number;
   region: string | null;
+  decision_log: Record<string, unknown>;
 };
 
 type ContextSummary = {
@@ -115,7 +116,7 @@ export async function generatePlan(): Promise<number> {
   const summary = summarizeContext(context);
 
   const clusters = await run<ClusterRow>(
-    `SELECT id, cluster_name, main_intent, cluster_type, primary_keyword, total_frequency, region
+    `SELECT id, cluster_name, main_intent, cluster_type, primary_keyword, total_frequency, region, decision_log
       FROM seo.keyword_clusters WHERE status IN ('new', 'candidate', 'rejected')`,
   );
 
@@ -156,12 +157,35 @@ export async function generatePlan(): Promise<number> {
     let action: RecommendedAction = gap.recommended_action;
     if (!passes && action !== "manual_review") action = "no_action";
 
+    const actionOverrideRaw = cluster.decision_log?.recommended_action_override;
+    if (
+      actionOverrideRaw === "create_new_page" ||
+      actionOverrideRaw === "update_existing_page" ||
+      actionOverrideRaw === "add_faq_to_existing_page" ||
+      actionOverrideRaw === "add_section_to_existing_page" ||
+      actionOverrideRaw === "merge_with_existing_cluster" ||
+      actionOverrideRaw === "no_action" ||
+      actionOverrideRaw === "manual_review"
+    ) {
+      action = actionOverrideRaw;
+    }
+
+    const statusOverrideRaw = cluster.decision_log?.status_override;
+    const clusterStatus =
+      statusOverrideRaw === "new" || statusOverrideRaw === "candidate" || statusOverrideRaw === "rejected"
+        ? statusOverrideRaw
+        : action === "no_action"
+          ? "rejected"
+          : passes
+            ? "candidate"
+            : "rejected";
+
     const missingData: string[] = [];
     if (!matchedBusinessTopic) missingData.push("Нет подтверждённой услуги или задачи в контексте компании");
     if (!input.serviceHasDescription) missingData.push("Нет описания услуги");
     if (!summary.hasFaq && (cluster.main_intent === "faq" || questionCount > 0)) missingData.push("Нет данных FAQ");
 
-    const status = passes ? ACTION_TO_STATUS[action] : "rejected";
+    const status = clusterStatus === "rejected" ? "rejected" : ACTION_TO_STATUS[action];
     const pageType = cluster.cluster_type ?? "article";
     const proposedUrl = action === "create_new_page" ? `/${slugify(primaryKeyword)}/` : null;
 
@@ -197,7 +221,7 @@ export async function generatePlan(): Promise<number> {
         gap.target_existing_url,
         proposedUrl,
         JSON.stringify(decisionLog),
-        passes ? "candidate" : "rejected",
+        clusterStatus,
         cluster.id,
       ],
     );

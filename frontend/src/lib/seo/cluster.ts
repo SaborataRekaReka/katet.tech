@@ -2,7 +2,7 @@ import "server-only";
 
 import { run } from "./db";
 import { loadContext, normalizeContextType } from "./seed";
-import { chatJson, cosineSimilarity, embed, getLastEmbeddingError } from "./openai";
+import { chatJson, cosineSimilarity, embed, getLastChatError, getLastEmbeddingError } from "./openai";
 import type { CompanyContext, Intent, PageType } from "./types";
 
 /**
@@ -17,11 +17,18 @@ import type { CompanyContext, Intent, PageType } from "./types";
  * Deterministic grouping is kept only for non-AI pipeline runs.
  */
 
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = Number(process.env[name] ?? "");
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.trunc(raw);
+}
+
 const EMBEDDING_BATCH_SIZE = 96;
 const LLM_BATCH_SIZE = 70;
 const MAX_CLUSTER_KEYWORDS = 80;
 const DEFAULT_SEMANTIC_THRESHOLD = 0.82;
-const MIN_STANDALONE_FREQUENCY = 700;
+const MIN_STANDALONE_FREQUENCY = envPositiveInt("SEO_MIN_STANDALONE_FREQUENCY", 150);
+const SINGLETON_HOLDBACK_FREQUENCY = envPositiveInt("SEO_SINGLETON_HOLDBACK_FREQUENCY", 30);
 
 type NormRow = {
   id: number;
@@ -209,6 +216,11 @@ function fallbackTopicKey(row: NormRow): string {
 
 function seoBucketFor(row: NormRow): SeoBucket | null {
   const text = row.keyword.toLowerCase();
+  const isEstimateOrNormative = /смет|гэсн|фер|тер|расцен|норматив|норма/u.test(text);
+  const isCompactionTechnology = /проход|толщин|глубин|схем|производительн|уплотнен/u.test(text);
+  const isRentalContext = /аренд|снять|заказ|услуг|экипаж|почас|смена|сутк/u.test(text);
+  const hasPriceSignal = /цен|стоим|прайс|руб|тариф|(^|\s)час(а|ов)?(\s|$)/u.test(text);
+
   if (/экскаватор|погрузчик/u.test(text)) return { key: "equipment-excavator", name: "аренда экскаватора", family: "commercial" };
   if (/манипулятор/u.test(text)) return { key: "equipment-manipulator", name: "аренда манипулятора", family: "commercial" };
   if (/автовыш/u.test(text)) return { key: "equipment-lift", name: "аренда автовышки", family: "commercial" };
@@ -216,7 +228,9 @@ function seoBucketFor(row: NormRow): SeoBucket | null {
   if (/вывоз грунт/u.test(text)) return { key: "task-soil-removal", name: "вывоз грунта", family: "commercial" };
   if (/вывоз снег/u.test(text)) return { key: "task-snow-removal", name: "вывоз снега", family: "commercial" };
   if (/москв|московск|подмосков/u.test(text)) return { key: "geo-moscow", name: "аренда спецтехники в Москве и области", family: "commercial" };
-  if (/цен|стоим|сколько|прайс|руб|(^|\s)час(а|ов)?(\s|$)/u.test(text)) return { key: "price", name: "стоимость аренды спецтехники", family: "commercial" };
+  if (hasPriceSignal && isRentalContext && !isEstimateOrNormative && !isCompactionTechnology) {
+    return { key: "price", name: "стоимость аренды спецтехники", family: "commercial" };
+  }
   if (/экипаж/u.test(text)) return { key: "crew", name: "аренда спецтехники с экипажем", family: "commercial" };
   if (/нужн|заказ|под заказ|сейчас|снять/u.test(text)) return { key: "order", name: "заказать спецтехнику", family: "commercial" };
   return null;
@@ -419,6 +433,195 @@ function splitOversizedClusters(clusters: DraftCluster[]): DraftCluster[] {
   return result;
 }
 
+function isLikelySingletonBridgeWord(keyword: string): boolean {
+  const text = keyword.toLowerCase();
+  return /^(что|как|какой|какая|какие|когда|где|зачем|почему|для|по|при|на|о)\b/u.test(text);
+}
+
+function topicSignature(row: NormRow): string {
+  const service = row.detected_service.map((item) => item.trim().toLowerCase()).filter(Boolean).slice(0, 2).join("|");
+  const task = row.detected_task.map((item) => item.trim().toLowerCase()).filter(Boolean).slice(0, 2).join("|");
+  const bucket = seoBucketFor(row)?.key ?? "";
+  const family = intentFamily(row.detected_intent);
+  if (bucket) return `${family}|bucket:${bucket}`;
+  if (service || task) return `${family}|service:${service}|task:${task}`;
+  return `${family}|fallback:${fallbackTopicKey(row)}`;
+}
+
+function singletonCanBeSecondary(row: NormRow): boolean {
+  const bucket = seoBucketFor(row);
+  if (bucket?.key === "price" || bucket?.key === "geo-moscow") return false;
+  if (isLikelySingletonBridgeWord(row.keyword)) return true;
+
+  const text = row.keyword.toLowerCase();
+  if (/вес|схема|глубина|толщина|разборка|подключение|управление|виды|типы/u.test(text)) return true;
+  return false;
+}
+
+function findBestSingletonMergeTarget(singleton: DraftCluster, candidates: DraftCluster[]): DraftCluster | null {
+  const row = singleton.primary;
+  if (!singletonCanBeSecondary(row)) return null;
+
+  const sig = topicSignature(row);
+  let best: { cluster: DraftCluster; score: number } | null = null;
+
+  for (const candidate of candidates) {
+    if (candidate === singleton) continue;
+    if (candidate.rows.length < 2) continue;
+    if (candidate.family !== singleton.family) continue;
+    if ((candidate.region ?? "") !== (singleton.region ?? "")) continue;
+
+    const candidateSig = topicSignature(candidate.primary);
+    let score = 0;
+    if (candidateSig === sig) score += 3;
+
+    const sharedEntities = rowEntities(row).filter((entity) => candidate.entities.has(entity)).length;
+    if (sharedEntities > 0) score += 2;
+
+    const rowText = row.keyword.toLowerCase();
+    const primaryText = candidate.primary.keyword.toLowerCase();
+    if (rowText.includes(primaryText) || primaryText.includes(rowText)) score += 1;
+
+    if ((candidate.primary.frequency ?? 0) >= MIN_STANDALONE_FREQUENCY) score += 1;
+    if (!best || score > best.score) best = { cluster: candidate, score };
+  }
+
+  if (!best || best.score < 3) return null;
+  return best.cluster;
+}
+
+function applyAiSingletonPolicy(clusters: DraftCluster[]): DraftCluster[] {
+  const working = clusters.map((cluster) => makeRowsDraftCluster(cluster.rows, cluster.family, cluster.llmKey, cluster.llmName));
+  const keep: DraftCluster[] = [];
+  const holdbackRows: NormRow[] = [];
+
+  for (const cluster of working) {
+    if (cluster.rows.length > 1) {
+      keep.push(cluster);
+      continue;
+    }
+
+    const row = cluster.primary;
+    const frequency = row.frequency ?? 0;
+    const strongStandalone = frequency >= MIN_STANDALONE_FREQUENCY || Boolean(seoBucketFor(row));
+    if (strongStandalone) {
+      keep.push(cluster);
+      continue;
+    }
+
+    const mergeTarget = findBestSingletonMergeTarget(cluster, working);
+    if (mergeTarget) {
+      mergeTarget.rows.push(row);
+      mergeTarget.rows.sort((a, b) => b.frequency - a.frequency);
+      mergeTarget.primary = mergeTarget.rows[0];
+      for (const entity of rowEntities(row)) mergeTarget.entities.add(entity);
+      continue;
+    }
+
+    if (frequency < SINGLETON_HOLDBACK_FREQUENCY) {
+      holdbackRows.push(row);
+      continue;
+    }
+
+    keep.push(cluster);
+  }
+
+  if (holdbackRows.length > 0) {
+    keep.push(makeRowsDraftCluster(holdbackRows, "informational", "holdback-singletons", "Холдбек одиночных запросов"));
+  }
+
+  const cleaned = keep
+    .map((cluster) => {
+      const dedup = new Map<number, NormRow>();
+      for (const row of cluster.rows) dedup.set(row.id, row);
+      return makeRowsDraftCluster([...dedup.values()], cluster.family, cluster.llmKey, cluster.llmName);
+    })
+    .filter((cluster) => cluster.rows.length > 0)
+    .sort((a, b) => {
+      const aFrequency = a.rows.reduce((sum, row) => sum + (row.frequency || 0), 0);
+      const bFrequency = b.rows.reduce((sum, row) => sum + (row.frequency || 0), 0);
+      return bFrequency - aFrequency;
+    });
+
+  return cleaned;
+}
+
+function isEstimateOrNormativeRow(row: NormRow): boolean {
+  return /смет|гэсн|фер|тер|расцен|норматив|норма/u.test(row.keyword.toLowerCase());
+}
+
+function isCompactionTechnologyRow(row: NormRow): boolean {
+  return /проход|толщин|глубин|схем|производительн|уплотнен/u.test(row.keyword.toLowerCase());
+}
+
+function isRentalCommercialRow(row: NormRow): boolean {
+  return /аренд|снять|заказ|услуг|экипаж|почас|смена|сутк|цена аренды/u.test(row.keyword.toLowerCase());
+}
+
+function splitMixedAiThemes(clusters: DraftCluster[]): DraftCluster[] {
+  const output: DraftCluster[] = [];
+
+  for (const cluster of clusters) {
+    const rows = cluster.rows;
+    if (rows.length <= 1) {
+      output.push(cluster);
+      continue;
+    }
+
+    const normativeRows = rows.filter(isEstimateOrNormativeRow);
+    const nonNormativeRows = rows.filter((row) => !isEstimateOrNormativeRow(row));
+
+    const hasNormativeConflict = normativeRows.length > 0 && nonNormativeRows.length > 0;
+
+    const technologyRows = nonNormativeRows.filter(isCompactionTechnologyRow);
+    const rentalRows = nonNormativeRows.filter(isRentalCommercialRow);
+    const hasTechRentalConflict = technologyRows.length > 0 && rentalRows.length > 0;
+
+    if (!hasNormativeConflict && !hasTechRentalConflict) {
+      output.push(cluster);
+      continue;
+    }
+
+    const bucketNormative = normativeRows;
+    const bucketTechnology = nonNormativeRows.filter(
+      (row) => isCompactionTechnologyRow(row) && !isRentalCommercialRow(row),
+    );
+    const bucketRental = nonNormativeRows.filter(
+      (row) => isRentalCommercialRow(row) && !isCompactionTechnologyRow(row),
+    );
+    const bucketMixed = nonNormativeRows.filter(
+      (row) => isCompactionTechnologyRow(row) && isRentalCommercialRow(row),
+    );
+    const bucketOther = nonNormativeRows.filter(
+      (row) => !isCompactionTechnologyRow(row) && !isRentalCommercialRow(row),
+    );
+
+    const baseKey = cluster.llmKey || fallbackTopicKey(cluster.primary);
+    const pushBucket = (bucketRows: NormRow[], suffix: string, hint?: string) => {
+      if (bucketRows.length === 0) return;
+      output.push(makeRowsDraftCluster(bucketRows, cluster.family, `${baseKey}-${suffix}`, hint));
+    };
+
+    pushBucket(bucketNormative, "normative", "Сметы и расценки");
+    pushBucket(bucketTechnology, "technology", "Технология работ");
+    pushBucket(bucketRental, "rental", "Аренда и заказ");
+    pushBucket(bucketMixed, "mixed");
+    pushBucket(bucketOther, "other");
+  }
+
+  return output;
+}
+
+function finalizeAiDraftClusters(clusters: DraftCluster[]): DraftCluster[] {
+  return splitOversizedClusters(
+    applyAiSingletonPolicy(
+      splitOversizedClusters(
+        splitMixedAiThemes(consolidateDraftClusters(clusters)),
+      ),
+    ),
+  );
+}
+
 function compactCompanyContext(context: CompanyContext[]): Array<{ type: string; point: string; value: string; note?: string }> {
   const out: Array<{ type: string; point: string; value: string; note?: string }> = [];
 
@@ -463,7 +666,10 @@ async function buildLlmClusters(rows: NormRow[]): Promise<DraftCluster[] | null>
           "Ты SEO-аналитик. Разбей поисковые запросы на смысловые кластеры уровня одной страницы или одной статьи. " +
           "Учитывай бизнес-контекст компании из поля company_context: какие услуги/техника/регионы релевантны, какие темы исключены. " +
           "Не делай общий кластер 'спецтехника', если внутри есть разные темы: аренда, цена, ремонт, продажа, документы, виды техники, конкретные машины, маркетплейсы, вопросы. " +
+          "Критично: не смешивай сметно-нормативные запросы (смета, расценка, ГЭСН, ФЕР, ТЕР) с коммерческой арендой. " +
+          "Критично: не смешивай технологию работ (проходы катка, толщина слоя, схема уплотнения, производительность) с ценой аренды. " +
           "Коммерческие, информационные и сравнительные запросы не смешивай. " +
+          "Если в партии есть несколько разных подтем, создай несколько отдельных кластеров (лучше 2-6 точных кластеров, чем 1 общий). " +
           "Верни JSON: {\"clusters\":[{\"key\":\"latin-kebab-key\",\"name\":\"короткое название\",\"ids\":[1,2]}]}. Каждый id должен быть ровно в одном кластере.",
         user: JSON.stringify({
           intent_family: family,
@@ -595,6 +801,9 @@ async function persistDraftClusters(
       Boolean(draft.llmKey?.startsWith("geo-") || draft.llmKey?.startsWith("task-"));
     const mainIntent = mainIntentForGroup(sorted);
     const clusterType = pageTypeForGroup(draft.family, hasGeo);
+    const isHoldbackCluster = Boolean(draft.llmKey?.startsWith("holdback-singletons"));
+    const scoringRecommendedAction = isHoldbackCluster ? "no_action" : null;
+    const scoringStatus = isHoldbackCluster ? "rejected" : "new";
     const rawName = draft.llmName || await nameCluster(primary.keyword, mainIntent, sorted.map((row) => row.keyword));
     const nameKey = `${(primary.region ?? "").trim().toLowerCase()}|${rawName.trim().toLowerCase()}`;
     const nextCount = (nameCounts.get(nameKey) ?? 0) + 1;
@@ -617,7 +826,15 @@ async function persistDraftClusters(
           semantic_threshold: method === "ai_embeddings" ? draft.threshold : null,
           llm_key: draft.llmKey ?? null,
           keyword_count: sorted.length,
-          guardrails: ["intent_family", "region", "business_entity_compatibility"],
+          guardrails: [
+            "intent_family",
+            "region",
+            "business_entity_compatibility",
+            "ai_singleton_policy_merge_or_holdback",
+          ],
+          singleton_policy: isHoldbackCluster ? "holdback" : "keep_or_merge",
+          recommended_action_override: scoringRecommendedAction,
+          status_override: scoringStatus,
         }),
       ],
     );
@@ -676,24 +893,10 @@ export async function clusterize(options: ClusterizeOptions = {}): Promise<Clust
   const rows = await loadRows(Boolean(options.rebuild));
   if (rows.length === 0) return { created: 0, method: "none" };
 
-  const llmClusters = await buildLlmClusters(rows);
-  if (llmClusters) {
-    const created = await persistDraftClusters(
-      splitOversizedClusters(mergeSeoBuckets(consolidateDraftClusters(llmClusters))),
-      "ai_llm",
-      Boolean(options.rebuild),
-    );
-    return { created, method: "ai_llm" };
-  }
-
-  if (options.requireAi) {
-    throw new Error("LLM-кластеризация недоступна: модель не вернула корректный JSON. Проверьте OPENAI_MODEL_CLUSTER.");
-  }
-
   const semanticClusters = await buildSemanticClusters(rows);
   if (semanticClusters) {
     const created = await persistDraftClusters(
-      splitOversizedClusters(mergeSeoBuckets(consolidateDraftClusters(semanticClusters))),
+      finalizeAiDraftClusters(semanticClusters),
       "ai_embeddings",
       Boolean(options.rebuild),
     );
@@ -707,7 +910,29 @@ export async function clusterize(options: ClusterizeOptions = {}): Promise<Clust
     );
   }
 
+  const llmClusters = await buildLlmClusters(rows);
+  if (llmClusters) {
+    const created = await persistDraftClusters(
+      finalizeAiDraftClusters(llmClusters),
+      "ai_llm",
+      Boolean(options.rebuild),
+    );
+    return { created, method: "ai_llm" };
+  }
+
+  if (options.requireAi) {
+    const embeddingDetail = getLastEmbeddingError() ?? "нет деталей embedding";
+    const llmDetail = getLastChatError() ?? "нет деталей llm";
+    throw new Error(
+      `AI-кластеризация недоступна. embedding: ${embeddingDetail}; llm: ${llmDetail}`,
+    );
+  }
+
   const ruleClusters = buildRuleClusters(rows);
-  const created = await persistDraftClusters(consolidateDraftClusters(ruleClusters), "rules", Boolean(options.rebuild));
+  const created = await persistDraftClusters(
+    consolidateDraftClusters(mergeSeoBuckets(ruleClusters)),
+    "rules",
+    Boolean(options.rebuild),
+  );
   return { created, method: "rules" };
 }

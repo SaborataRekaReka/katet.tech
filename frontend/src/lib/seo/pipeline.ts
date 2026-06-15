@@ -82,6 +82,24 @@ export async function createJob(kind: string, total: number = STEPS.length): Pro
   return row!.id;
 }
 
+export async function findRunningJob(kind: string): Promise<number | null> {
+  const row = await one<{ id: number }>(
+    `SELECT id FROM seo.jobs WHERE kind = $1 AND status = 'running' ORDER BY id DESC LIMIT 1`,
+    [kind],
+  );
+  return row?.id ?? null;
+}
+
+export async function createSingleFlightJob(
+  kind: string,
+  total: number = STEPS.length,
+): Promise<{ jobId: number; alreadyRunning: boolean }> {
+  const running = await findRunningJob(kind);
+  if (running) return { jobId: running, alreadyRunning: true };
+  const jobId = await createJob(kind, total);
+  return { jobId, alreadyRunning: false };
+}
+
 async function setStep(jobId: number, step: string, progress: number, message: string): Promise<void> {
   await run(
     `UPDATE seo.jobs

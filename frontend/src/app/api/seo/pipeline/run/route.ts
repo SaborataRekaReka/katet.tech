@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { guard } from "../../_guard";
-import { createJob, runFullPipeline } from "@/lib/seo/pipeline";
+import { createSingleFlightJob, runFullPipeline } from "@/lib/seo/pipeline";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,9 +12,11 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { autoDraftTop?: number };
   const autoDraftTop = Number.isFinite(body.autoDraftTop) ? Math.max(0, Math.min(20, Number(body.autoDraftTop))) : 5;
 
-  const jobId = await createJob("full_pipeline");
-  // Run in the background on the long-lived Node server; do not block the response.
-  void runFullPipeline(jobId, { autoDraftTop });
+  const started = await createSingleFlightJob("full_pipeline");
+  if (!started.alreadyRunning) {
+    // Run in the background on the long-lived Node server; do not block the response.
+    void runFullPipeline(started.jobId, { autoDraftTop });
+  }
 
-  return NextResponse.json({ jobId });
+  return NextResponse.json({ jobId: started.jobId, alreadyRunning: started.alreadyRunning });
 }

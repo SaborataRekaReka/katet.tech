@@ -127,23 +127,33 @@ async function draftTopArticles(
   if (limit <= 0) return { drafted: 0, total: 0, failures: [] };
 
   const selected = (clusterIds ?? []).filter((n) => Number.isFinite(n));
-  const clusterFilter = selected.length > 0 ? `AND p.cluster_id = ANY($2::int[])` : "";
-  const params: unknown[] = selected.length > 0 ? [limit, selected] : [limit];
-
-  const top = await run<{ id: number }>(
-    `SELECT p.id
-     FROM seo.content_plan_items p
-     JOIN seo.keyword_clusters c ON c.id = p.cluster_id
-     WHERE p.status NOT IN ('rejected', 'published', 'content_generated')
-       AND COALESCE(p.recommended_action, '') <> 'no_action'
-       AND NOT EXISTS (
-         SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id
-       )
-       ${clusterFilter}
-     ORDER BY p.priority DESC, c.total_frequency DESC, p.id DESC
-     LIMIT $1`,
-    params,
-  );
+  const top = selected.length > 0
+    ? await run<{ id: number }>(
+      `SELECT p.id
+       FROM seo.content_plan_items p
+       JOIN seo.keyword_clusters c ON c.id = p.cluster_id
+       WHERE p.cluster_id = ANY($2::int[])
+         AND p.status NOT IN ('published', 'content_generated')
+         AND NOT EXISTS (
+           SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id
+         )
+       ORDER BY p.priority DESC, c.total_frequency DESC, p.id DESC
+       LIMIT $1`,
+      [limit, selected],
+    )
+    : await run<{ id: number }>(
+      `SELECT p.id
+       FROM seo.content_plan_items p
+       JOIN seo.keyword_clusters c ON c.id = p.cluster_id
+       WHERE p.status NOT IN ('rejected', 'published', 'content_generated')
+         AND COALESCE(p.recommended_action, '') <> 'no_action'
+         AND NOT EXISTS (
+           SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id
+         )
+       ORDER BY p.priority DESC, c.total_frequency DESC, p.id DESC
+       LIMIT $1`,
+      [limit],
+    );
 
   let drafted = 0;
   const failures: DraftFailure[] = [];

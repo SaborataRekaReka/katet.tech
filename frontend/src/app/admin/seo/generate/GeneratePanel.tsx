@@ -23,9 +23,17 @@ type DraftLink = {
   cluster_name: string | null;
 };
 
-export function GeneratePanel({ clusters }: { clusters: GeneratableCluster[] }) {
+type GeneratePanelProps = {
+  clusters: GeneratableCluster[];
+  initialSelected?: number[];
+};
+
+export function GeneratePanel({ clusters, initialSelected = [] }: GeneratePanelProps) {
   const router = useRouter();
-  const [selected, setSelected] = useState<number[]>([]);
+  const [selected, setSelected] = useState<number[]>(() => {
+    const allowed = new Set(clusters.map((cluster) => cluster.id));
+    return [...new Set(initialSelected.filter((id) => Number.isFinite(id) && allowed.has(id)))];
+  });
   const [count, setCount] = useState(3);
   const [busy, setBusy] = useState(false);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -37,6 +45,15 @@ export function GeneratePanel({ clusters }: { clusters: GeneratableCluster[] }) 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
+
+  useEffect(() => {
+    if (initialSelected.length === 0) return;
+    const allowed = new Set(clusters.map((cluster) => cluster.id));
+    setSelected((prev) => {
+      if (prev.length > 0) return prev.filter((id) => allowed.has(id));
+      return [...new Set(initialSelected.filter((id) => Number.isFinite(id) && allowed.has(id)))];
+    });
+  }, [clusters, initialSelected]);
 
   function toggle(id: number) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -119,7 +136,7 @@ export function GeneratePanel({ clusters }: { clusters: GeneratableCluster[] }) 
       <div className={styles.tableCard}>
         <div className={styles.emptyState}>
           <p className={styles.emptyTitle}>Нет кластеров для генерации</p>
-          <p>Все темы уже закрыты статьями либо ещё не созданы кластеры. Загрузите запросы и запустите кластеризацию.</p>
+          <p>Нет кластеров без черновика. Пересоберите кластеры или создайте новые темы в «Семантике».</p>
         </div>
       </div>
     );
@@ -150,6 +167,12 @@ export function GeneratePanel({ clusters }: { clusters: GeneratableCluster[] }) 
             {busy ? "Генерация…" : "Сгенерировать"}
           </button>
         </div>
+
+        {selected.length > 0 && (
+          <p className={styles.smallMuted} style={{ marginTop: 8 }}>
+            Ручной режим: будут сгенерированы выбранные кластеры, даже если они не рекомендованы автоматически.
+          </p>
+        )}
 
         {(busy || progress > 0) && (
           <div className={styles.row} style={{ marginTop: 14 }}>

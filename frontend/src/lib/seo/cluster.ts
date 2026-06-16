@@ -803,7 +803,7 @@ async function persistDraftClusters(
     const clusterType = pageTypeForGroup(draft.family, hasGeo);
     const isHoldbackCluster = Boolean(draft.llmKey?.startsWith("holdback-singletons"));
     const scoringRecommendedAction = isHoldbackCluster ? "no_action" : null;
-    const scoringStatus = isHoldbackCluster ? "rejected" : "new";
+    const scoringStatus = isHoldbackCluster ? "rejected" : null;
     const rawName = draft.llmName || await nameCluster(primary.keyword, mainIntent, sorted.map((row) => row.keyword));
     const nameKey = `${(primary.region ?? "").trim().toLowerCase()}|${rawName.trim().toLowerCase()}`;
     const nextCount = (nameCounts.get(nameKey) ?? 0) + 1;

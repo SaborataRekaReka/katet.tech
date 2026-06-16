@@ -597,7 +597,7 @@ export type GeneratableCluster = {
   priority: number | null;
 };
 
-/** Clusters that have a content-plan item, no article yet, and are recommended for content. */
+/** Clusters that have a content-plan item and no article yet (manual generation can override recommendation). */
 export async function getGeneratableClusters(): Promise<GeneratableCluster[]> {
   return run<GeneratableCluster>(
     `SELECT
@@ -612,8 +612,7 @@ export async function getGeneratableClusters(): Promise<GeneratableCluster[]> {
      JOIN seo.content_plan_items p ON p.cluster_id = c.id
      LEFT JOIN seo.cluster_keywords ck ON ck.cluster_id = c.id
      WHERE c.status <> 'archived'
-       AND p.status NOT IN ('rejected', 'published', 'content_generated')
-       AND COALESCE(p.recommended_action, '') <> 'no_action'
+       AND p.status NOT IN ('published', 'content_generated')
        AND NOT EXISTS (SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id)
      GROUP BY c.id, p.id
      ORDER BY p.priority DESC NULLS LAST, c.total_frequency DESC, c.id DESC`,

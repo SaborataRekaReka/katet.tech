@@ -142,7 +142,7 @@ export default async function ClustersPage() {
                             Статья
                           </Link>
                         ) : (
-                          <Link className={styles.iconLink} href="/admin/seo/generate">
+                          <Link className={styles.iconLink} href={`/admin/seo/generate?clusterId=${c.id}`}>
                             Создать статью
                           </Link>
                         )}

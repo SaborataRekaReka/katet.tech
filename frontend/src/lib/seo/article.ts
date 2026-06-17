@@ -289,23 +289,28 @@ export async function generateArticle(planItemId: number): Promise<number> {
 
   const brief = briefRow.brief;
   const allowFallback = process.env.SEO_ALLOW_ARTICLE_FALLBACK === "1";
+  const tryLlmInFallback = process.env.SEO_TRY_LLM_WITH_FALLBACK === "1";
+  const tryImagesInFallback = process.env.SEO_TRY_IMAGES_WITH_FALLBACK === "1";
+  const shouldCallLlm = !allowFallback || tryLlmInFallback;
   let article = fallbackArticle(brief);
 
-  const llm = await chatJson<GeneratedArticle>({
-    modelSlot: "strong",
-    temperature: 0.5,
-    maxTokens: 7000,
-    system:
-      "Ты опытный SEO-копирайтер. Напиши черновик страницы для сайта на русском СТРОГО по переданному ТЗ. " +
-      "Используй только факты из source_facts ТЗ. Не выдумывай цены, характеристики, районы, сроки и кейсы. " +
-      "Для полезной экспертной части используй research_summary и research_sources из ТЗ: добавляй практические рекомендации, критерии выбора, типовые ошибки и чек-листы. " +
-      "Если используешь данные из ресерча, формулируй нейтрально и не приписывай их компании. " +
-      "Не пиши служебные пометки для редактора, внутренние инструкции и технические дисклеймеры в body_html. " +
-      "Структура по required_blocks. Естественно используй primary_keyword и secondary_keywords. " +
-      "Верни строго JSON: {title, slug, seo_title, meta_description, body_html, faq:[{question,answer}]}. " +
-      "body_html — валидный HTML с <h2>/<p>/<ul>; без <html>/<body>. slug — латиницей. meta_description до 160 символов.",
-    user: JSON.stringify(brief),
-  });
+  const llm = shouldCallLlm
+    ? await chatJson<GeneratedArticle>({
+      modelSlot: "strong",
+      temperature: 0.5,
+      maxTokens: 7000,
+      system:
+        "Ты опытный SEO-копирайтер. Напиши черновик страницы для сайта на русском СТРОГО по переданному ТЗ. " +
+        "Используй только факты из source_facts ТЗ. Не выдумывай цены, характеристики, районы, сроки и кейсы. " +
+        "Для полезной экспертной части используй research_summary и research_sources из ТЗ: добавляй практические рекомендации, критерии выбора, типовые ошибки и чек-листы. " +
+        "Если используешь данные из ресерча, формулируй нейтрально и не приписывай их компании. " +
+        "Не пиши служебные пометки для редактора, внутренние инструкции и технические дисклеймеры в body_html. " +
+        "Структура по required_blocks. Естественно используй primary_keyword и secondary_keywords. " +
+        "Верни строго JSON: {title, slug, seo_title, meta_description, body_html, faq:[{question,answer}]}. " +
+        "body_html — валидный HTML с <h2>/<p>/<ul>; без <html>/<body>. slug — латиницей. meta_description до 160 символов.",
+      user: JSON.stringify(brief),
+    })
+    : null;
   if (llm && llm.title && llm.body_html) {
     const title = asText(llm.title);
     const candidate: GeneratedArticle = {
@@ -327,7 +332,7 @@ export async function generateArticle(planItemId: number): Promise<number> {
           "Проверьте промпт/контекст и повторите запуск. Для аварийного режима можно включить SEO_ALLOW_ARTICLE_FALLBACK=1.",
       );
     }
-  } else if (!allowFallback) {
+  } else if (shouldCallLlm && !allowFallback) {
     const reason = getLastChatError();
     throw new Error(
       `Не удалось сгенерировать текст статьи через LLM${reason ? `: ${reason}` : ""}. ` +
@@ -337,7 +342,9 @@ export async function generateArticle(planItemId: number): Promise<number> {
   }
 
   article.body_html = appendSourcesBlock(article.body_html, brief);
-  article.body_html = await generateAndInsertImages(article, brief);
+  if (!allowFallback || tryImagesInFallback) {
+    article.body_html = await generateAndInsertImages(article, brief);
+  }
 
   const urlPath = `/${article.slug || "stranica"}/`;
   const schema =

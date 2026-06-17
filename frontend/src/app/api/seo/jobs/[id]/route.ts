@@ -34,9 +34,11 @@ async function failStalledJob(jobId: number, reason: string) {
   await run(
     `UPDATE seo.jobs
         SET status='error',
-            error=$2,
+            error=$2::text,
             finished_at=NOW(),
-            log=COALESCE(log, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('at', $3, 'level', 'error', 'message', $2))
+            log=COALESCE(log, '[]'::jsonb) || jsonb_build_array(
+              jsonb_build_object('at', $3::text, 'level', 'error', 'message', $2::text)
+            )
       WHERE id=$1 AND status='running'`,
     [jobId, reason, nowIso],
   );

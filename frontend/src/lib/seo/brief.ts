@@ -106,39 +106,44 @@ export async function generateBrief(
   const forceCreateNewPage = options.forceCreateNewPage === true;
   const recommendedAction = forceCreateNewPage ? "create_new_page" : plan.recommended_action;
   const targetExistingUrl = forceCreateNewPage ? null : plan.target_existing_url;
-  const research = await webResearch(
-    [cluster.primary_keyword, ...(keywords.slice(0, 4).map((k) => k.keyword))]
-      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-      .join("; "),
-  );
+  const emergencyFallback = process.env.SEO_ALLOW_ARTICLE_FALLBACK === "1";
+  const research = emergencyFallback
+    ? null
+    : await webResearch(
+      [cluster.primary_keyword, ...(keywords.slice(0, 4).map((k) => k.keyword))]
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .join("; "),
+    );
 
   let brief = fallbackBrief(cluster, keywords, pageType);
-  const llm = await chatJson<ContentBrief>({
-    modelSlot: "strong",
-    temperature: 0.3,
-    system:
-      "Ты SEO-стратег и редактор. Сформируй техническое задание (ТЗ) на страницу строго на основе переданного кластера запросов и фактов компании. " +
-      "ЗАПРЕЩЕНО: придумывать тему самому, добавлять ключи которых нет в кластере, добавлять услуги/цены/характеристики/районы которых нет в фактах. " +
-      (forceCreateNewPage
-        ? "Оператор явно запросил НОВУЮ самостоятельную страницу. Не предлагай патчи существующих URL и не добавляй служебные пометки для редактора. "
-        : "") +
-      "Используй web_research_summary и web_research_sources для полезного контента по теме (определения, методики, риски, практические рекомендации), " +
-      "но не выдавай данные источников как факты именно о компании. " +
-      "Если данных не хватает — перечисли их в missing_data. Верни строго JSON с полями: page_goal, page_type, search_intent, target_user, business_goal, primary_keyword, secondary_keywords[], questions_to_answer[], required_blocks[], forbidden_claims[], source_facts[], missing_data[], internal_link_targets[], cta_requirements[], meta_requirements{title_rule, description_rule}, schema_requirements[], quality_requirements[].",
-    user: JSON.stringify({
-      page_type: pageType,
-      recommended_action: recommendedAction,
-      target_existing_url: targetExistingUrl,
-      force_create_new_page: forceCreateNewPage,
-      main_intent: cluster.main_intent,
-      primary_keyword: cluster.primary_keyword,
-      cluster_keywords: keywords.map((k) => k.keyword),
-      questions: keywords.filter((k) => k.role === "question").map((k) => k.keyword),
-      company_facts: facts,
-      web_research_summary: research?.summary ?? "",
-      web_research_sources: research?.sources ?? [],
-    }),
-  });
+  const llm = emergencyFallback
+    ? null
+    : await chatJson<ContentBrief>({
+      modelSlot: "strong",
+      temperature: 0.3,
+      system:
+        "Ты SEO-стратег и редактор. Сформируй техническое задание (ТЗ) на страницу строго на основе переданного кластера запросов и фактов компании. " +
+        "ЗАПРЕЩЕНО: придумывать тему самому, добавлять ключи которых нет в кластере, добавлять услуги/цены/характеристики/районы которых нет в фактах. " +
+        (forceCreateNewPage
+          ? "Оператор явно запросил НОВУЮ самостоятельную страницу. Не предлагай патчи существующих URL и не добавляй служебные пометки для редактора. "
+          : "") +
+        "Используй web_research_summary и web_research_sources для полезного контента по теме (определения, методики, риски, практические рекомендации), " +
+        "но не выдавай данные источников как факты именно о компании. " +
+        "Если данных не хватает — перечисли их в missing_data. Верни строго JSON с полями: page_goal, page_type, search_intent, target_user, business_goal, primary_keyword, secondary_keywords[], questions_to_answer[], required_blocks[], forbidden_claims[], source_facts[], missing_data[], internal_link_targets[], cta_requirements[], meta_requirements{title_rule, description_rule}, schema_requirements[], quality_requirements[].",
+      user: JSON.stringify({
+        page_type: pageType,
+        recommended_action: recommendedAction,
+        target_existing_url: targetExistingUrl,
+        force_create_new_page: forceCreateNewPage,
+        main_intent: cluster.main_intent,
+        primary_keyword: cluster.primary_keyword,
+        cluster_keywords: keywords.map((k) => k.keyword),
+        questions: keywords.filter((k) => k.role === "question").map((k) => k.keyword),
+        company_facts: facts,
+        web_research_summary: research?.summary ?? "",
+        web_research_sources: research?.sources ?? [],
+      }),
+    });
   if (llm && llm.primary_keyword) {
     brief = { ...brief, ...llm };
   }

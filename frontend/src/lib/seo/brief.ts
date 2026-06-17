@@ -1,7 +1,7 @@
 import "server-only";
 
 import { one, run } from "./db";
-import { chatJson } from "./openai";
+import { chatJson, webResearch } from "./openai";
 import { loadContext, normalizeContextType } from "./seed";
 import type { CompanyContext, ContentBrief, Intent, PageType } from "./types";
 
@@ -106,6 +106,11 @@ export async function generateBrief(
   const forceCreateNewPage = options.forceCreateNewPage === true;
   const recommendedAction = forceCreateNewPage ? "create_new_page" : plan.recommended_action;
   const targetExistingUrl = forceCreateNewPage ? null : plan.target_existing_url;
+  const research = await webResearch(
+    [cluster.primary_keyword, ...(keywords.slice(0, 4).map((k) => k.keyword))]
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .join("; "),
+  );
 
   let brief = fallbackBrief(cluster, keywords, pageType);
   const llm = await chatJson<ContentBrief>({
@@ -117,6 +122,8 @@ export async function generateBrief(
       (forceCreateNewPage
         ? "Оператор явно запросил НОВУЮ самостоятельную страницу. Не предлагай патчи существующих URL и не добавляй служебные пометки для редактора. "
         : "") +
+      "Используй web_research_summary и web_research_sources для полезного контента по теме (определения, методики, риски, практические рекомендации), " +
+      "но не выдавай данные источников как факты именно о компании. " +
       "Если данных не хватает — перечисли их в missing_data. Верни строго JSON с полями: page_goal, page_type, search_intent, target_user, business_goal, primary_keyword, secondary_keywords[], questions_to_answer[], required_blocks[], forbidden_claims[], source_facts[], missing_data[], internal_link_targets[], cta_requirements[], meta_requirements{title_rule, description_rule}, schema_requirements[], quality_requirements[].",
     user: JSON.stringify({
       page_type: pageType,
@@ -128,11 +135,16 @@ export async function generateBrief(
       cluster_keywords: keywords.map((k) => k.keyword),
       questions: keywords.filter((k) => k.role === "question").map((k) => k.keyword),
       company_facts: facts,
+      web_research_summary: research?.summary ?? "",
+      web_research_sources: research?.sources ?? [],
     }),
   });
   if (llm && llm.primary_keyword) {
     brief = { ...brief, ...llm };
   }
+
+  brief.research_summary = research?.summary ?? brief.research_summary ?? "";
+  brief.research_sources = Array.isArray(research?.sources) ? research!.sources : [];
 
   // Normalize array fields: the LLM occasionally returns arrays of objects
   // ({name|text|value}) instead of plain strings. Coerce them so downstream

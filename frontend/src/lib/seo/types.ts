@@ -123,6 +123,12 @@ export type ContentPlanItem = {
   reviewer_comment: string | null;
 };
 
+export type ResearchSource = {
+  title: string;
+  url: string;
+  snippet?: string;
+};
+
 export type ContentBrief = {
   page_goal: string;
   page_type: string;
@@ -141,6 +147,8 @@ export type ContentBrief = {
   meta_requirements: { title_rule: string; description_rule: string };
   schema_requirements: string[];
   quality_requirements: string[];
+  research_summary?: string;
+  research_sources?: ResearchSource[];
 };
 
 export type GeneratedArticle = {

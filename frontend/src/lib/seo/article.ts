@@ -46,6 +46,18 @@ function escapeHtml(input: unknown): string {
   return asText(input).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function sanitizeExternalUrl(input: unknown): string | null {
+  const raw = asText(input).trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function fallbackArticle(brief: ContentBrief): GeneratedArticle {
   const primary = asText(brief.primary_keyword);
   const pageGoal = asText(brief.page_goal);
@@ -123,6 +135,25 @@ function isMeaningfulArticleBody(bodyHtml: string): boolean {
   const textLength = htmlToText(bodyHtml).length;
   const richParagraphs = meaningfulParagraphCount(bodyHtml, 40);
   return textLength >= 700 && richParagraphs >= 4;
+}
+
+function appendSourcesBlock(bodyHtml: string, brief: ContentBrief): string {
+  const sources = Array.isArray(brief.research_sources) ? brief.research_sources : [];
+  if (sources.length === 0) return bodyHtml;
+
+  const items = sources
+    .slice(0, 8)
+    .map((source) => {
+      const url = sanitizeExternalUrl(source.url);
+      if (!url) return "";
+      const title = escapeHtml(source.title || url);
+      return `<li><a href="${url}" target="_blank" rel="nofollow noopener noreferrer">${title}</a></li>`;
+    })
+    .filter((item) => item.length > 0)
+    .join("\n");
+
+  if (!items) return bodyHtml;
+  return `${bodyHtml}\n<h2>Источники и материалы по теме</h2>\n<ul>\n${items}\n</ul>`;
 }
 
 function escapeRegExp(value: string): string {
@@ -267,6 +298,8 @@ export async function generateArticle(planItemId: number): Promise<number> {
     system:
       "Ты опытный SEO-копирайтер. Напиши черновик страницы для сайта на русском СТРОГО по переданному ТЗ. " +
       "Используй только факты из source_facts ТЗ. Не выдумывай цены, характеристики, районы, сроки и кейсы. " +
+      "Для полезной экспертной части используй research_summary и research_sources из ТЗ: добавляй практические рекомендации, критерии выбора, типовые ошибки и чек-листы. " +
+      "Если используешь данные из ресерча, формулируй нейтрально и не приписывай их компании. " +
       "Не пиши служебные пометки для редактора, внутренние инструкции и технические дисклеймеры в body_html. " +
       "Структура по required_blocks. Естественно используй primary_keyword и secondary_keywords. " +
       "Верни строго JSON: {title, slug, seo_title, meta_description, body_html, faq:[{question,answer}]}. " +
@@ -303,6 +336,7 @@ export async function generateArticle(planItemId: number): Promise<number> {
     );
   }
 
+  article.body_html = appendSourcesBlock(article.body_html, brief);
   article.body_html = await generateAndInsertImages(article, brief);
 
   const urlPath = `/${article.slug || "stranica"}/`;

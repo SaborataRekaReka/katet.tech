@@ -623,6 +623,89 @@ export type GeneratedImage = {
   mimeType: string;
 };
 
+export type ResearchSource = {
+  title: string;
+  url: string;
+  snippet?: string;
+};
+
+export type WebResearchResult = {
+  summary: string;
+  sources: ResearchSource[];
+};
+
+function normalizeUrl(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return "";
+  if (!/^https?:\/\//i.test(text)) return "";
+  return text;
+}
+
+function normalizeResearchSource(value: unknown): ResearchSource | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const url = normalizeUrl(raw.url ?? raw.link);
+  if (!url) return null;
+  const title = typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : url;
+  const snippet = typeof raw.snippet === "string" ? raw.snippet.trim() : "";
+  return { title, url, ...(snippet ? { snippet } : {}) };
+}
+
+/**
+ * External web research for a topic. Uses OpenAI Responses API tool web_search_preview
+ * and returns a compact summary plus deduplicated source list.
+ */
+export async function webResearch(topic: string, options?: { maxSources?: number }): Promise<WebResearchResult | null> {
+  const client = await getClient();
+  if (!client) return null;
+
+  const query = topic.trim();
+  if (!query) return null;
+
+  const maxSources = Math.max(3, Math.min(options?.maxSources ?? 8, 12));
+
+  try {
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      instructions:
+        "Проведи веб-ресерч и верни один JSON-объект формата {summary, sources:[{title,url,snippet}]}. " +
+        "summary: 6-10 тезисов по теме на русском, нейтрально и фактически. " +
+        "sources: только реальные http/https URL, без дублей. Не выдумывай источники.",
+      input: JSON.stringify({ topic: query, max_sources: maxSources }),
+      tools: [{ type: "web_search_preview" }],
+      temperature: 0.2,
+      max_output_tokens: 1400,
+    });
+
+    const content = extractTextFromResponse(response);
+    if (!content) return null;
+
+    const parsed = parseJsonPayload(content);
+    if (!parsed.ok || !parsed.value || typeof parsed.value !== "object") return null;
+
+    const raw = parsed.value as Record<string, unknown>;
+    const summary = typeof raw.summary === "string" ? raw.summary.trim() : "";
+    const sourcesRaw = Array.isArray(raw.sources) ? raw.sources : [];
+    const seen = new Set<string>();
+    const sources: ResearchSource[] = [];
+
+    for (const item of sourcesRaw) {
+      const source = normalizeResearchSource(item);
+      if (!source) continue;
+      if (seen.has(source.url)) continue;
+      seen.add(source.url);
+      sources.push(source);
+      if (sources.length >= maxSources) break;
+    }
+
+    if (!summary && sources.length === 0) return null;
+    return { summary, sources };
+  } catch (error) {
+    console.error("[seo/openai] webResearch failed:", (error as Error).message);
+    return null;
+  }
+}
+
 /** Generate one image with the configured image model (gpt-image-2 by default). */
 export async function generateImage(prompt: string, size: "1024x1024" | "1536x1024" = "1536x1024"): Promise<GeneratedImage | null> {
   if (!prompt.trim()) return null;

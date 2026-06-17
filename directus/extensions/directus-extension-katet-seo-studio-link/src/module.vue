@@ -97,11 +97,8 @@
               <h3>Пакетная генерация</h3>
             </div>
             <p class="muted">Берёт лучшие незакрытые темы или выбранные кластеры во вкладке «Генерация».</p>
-            <div class="form-row">
-              <label class="field">
-                <span class="field-label">Количество статей</span>
-                <input v-model.number="batchLimit" type="number" min="1" max="20" class="control control-sm" />
-              </label>
+            <div class="form-row form-row--between">
+              <span class="muted small">По умолчанию создаётся 1 статья за запуск.</span>
               <v-button small :loading="busy.batch" @click="startBatchFromOverview">Генерировать</v-button>
             </div>
           </div>
@@ -442,11 +439,8 @@
             <span class="muted small">Очистка, кластеризация и обновление контент-плана.</span>
           </div>
           <div class="row">
-            <v-button small secondary :loading="busy.batch" @click="startWorkflowBatchGeneration">Сгенерировать статьи</v-button>
-            <label class="field-inline">
-              Количество:
-              <input v-model.number="workflowBatchCount" type="number" min="1" max="20" class="control control-sm" />
-            </label>
+            <v-button small secondary :loading="busy.batch" @click="startWorkflowBatchGeneration">Сгенерировать статью</v-button>
+            <span class="muted small">Создаётся 1 статья за запуск.</span>
           </div>
           <v-progress-linear v-if="rebuildJob.running" :value="rebuildJob.progress" rounded class="progress" />
           <p v-if="rebuildJob.running" class="muted small">{{ rebuildJob.message || 'Обработка…' }}</p>
@@ -694,15 +688,9 @@
             <v-button x-small secondary @click="loadGeneratableClusters"><v-icon name="refresh" small left />Обновить</v-button>
           </div>
           <div class="form-row form-row--between">
-            <div class="row">
-              <label class="field-inline">
-                Количество
-                <input v-model.number="generateCount" :disabled="generateSelectedIds.length > 0" type="number" min="1" max="20" class="control control-sm" />
-              </label>
-              <span class="muted small">
-                {{ generateSelectedIds.length > 0 ? `Выбрано кластеров: ${generateSelectedIds.length}` : 'Будут выбраны лучшие незакрытые темы' }}
-              </span>
-            </div>
+            <span class="muted small">
+              {{ generateSelectedIds.length > 0 ? `Выбрано кластеров: ${generateSelectedIds.length}` : 'Будет создана 1 статья по лучшей незакрытой теме' }}
+            </span>
             <v-button small :loading="busy.batch" @click="startBatchGeneration">Сгенерировать</v-button>
           </div>
           <v-progress-linear v-if="generateState.running || generateState.progress > 0" :value="generateState.progress" rounded class="progress" />
@@ -1126,8 +1114,6 @@ const info = ref("");
 const seoToken = ref("");
 
 const autoDraftTop = ref(5);
-const batchLimit = ref(3);
-const workflowBatchCount = ref(3);
 
 const currentTitle = computed(() => tabMeta[activeTab.value]?.title || "SEO-конвейер");
 const currentIntro = computed(() => tabMeta[activeTab.value]?.intro || "");
@@ -1257,7 +1243,6 @@ const planItems = ref([]);
 
 const generatableClusters = ref([]);
 const generateSelectedIds = ref([]);
-const generateCount = ref(3);
 
 const generateState = reactive({ jobId: null, running: false, progress: 0, logs: [], results: null, error: "" });
 
@@ -2149,7 +2134,6 @@ async function startSemanticsRebuild() {
 
 async function startWorkflowBatchGeneration() {
   generateSelectedIds.value = [];
-  generateCount.value = clamp(workflowBatchCount.value, 1, 20);
   await startBatchGeneration();
 }
 
@@ -2452,7 +2436,7 @@ async function startBatchGeneration() {
   generateState.progress = 0;
 
   const clusterIds = generateSelectedIds.value.slice();
-  const limit = clusterIds.length > 0 ? clusterIds.length : clamp(generateCount.value, 1, 20);
+  const limit = clusterIds.length > 0 ? clusterIds.length : 1;
 
   try {
     const payload = { limit, ...(clusterIds.length > 0 ? { clusterIds } : {}) };
@@ -2484,7 +2468,6 @@ async function startBatchGeneration() {
 
 async function startBatchFromOverview() {
   generateSelectedIds.value = [];
-  generateCount.value = clamp(batchLimit.value, 1, 20);
   await startBatchGeneration();
 }
 

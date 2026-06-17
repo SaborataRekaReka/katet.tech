@@ -267,6 +267,7 @@ export async function generateArticle(planItemId: number): Promise<number> {
     system:
       "Ты опытный SEO-копирайтер. Напиши черновик страницы для сайта на русском СТРОГО по переданному ТЗ. " +
       "Используй только факты из source_facts ТЗ. Не выдумывай цены, характеристики, районы, сроки и кейсы. " +
+      "Не пиши служебные пометки для редактора, внутренние инструкции и технические дисклеймеры в body_html. " +
       "Структура по required_blocks. Естественно используй primary_keyword и secondary_keywords. " +
       "Верни строго JSON: {title, slug, seo_title, meta_description, body_html, faq:[{question,answer}]}. " +
       "body_html — валидный HTML с <h2>/<p>/<ul>; без <html>/<body>. slug — латиницей. meta_description до 160 символов.",

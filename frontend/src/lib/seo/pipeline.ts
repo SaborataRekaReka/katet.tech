@@ -29,7 +29,7 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
   return Math.max(min, Math.min(max, Math.trunc(raw)));
 }
 
-const BRIEF_TIMEOUT_MS = envInt("SEO_BRIEF_TIMEOUT_MS", 120_000, 10_000, 3_600_000);
+const BRIEF_TIMEOUT_MS = envInt("SEO_BRIEF_TIMEOUT_MS", 300_000, 10_000, 3_600_000);
 const ARTICLE_TIMEOUT_MS = envInt("SEO_ARTICLE_TIMEOUT_MS", 300_000, 10_000, 3_600_000);
 
 type DraftFailure = { planItemId: number; reason: string };
@@ -127,7 +127,8 @@ async function draftTopArticles(
   if (limit <= 0) return { drafted: 0, total: 0, failures: [] };
 
   const selected = (clusterIds ?? []).filter((n) => Number.isFinite(n));
-  const top = selected.length > 0
+  const manualSelectedMode = selected.length > 0;
+  const top = manualSelectedMode
     ? await run<{ id: number }>(
       `SELECT p.id
        FROM seo.content_plan_items p
@@ -172,7 +173,8 @@ async function draftTopArticles(
         [item.id],
       );
 
-      if (!existingBrief) {
+      const needsFreshBrief = manualSelectedMode || !existingBrief;
+      if (needsFreshBrief) {
         await onProgress?.({
           drafted,
           total: top.length,
@@ -181,7 +183,7 @@ async function draftTopArticles(
           message: `План #${item.id}: генерация brief`,
         });
         await withTimeout(
-          () => generateBrief(item.id, "auto"),
+          () => generateBrief(item.id, "auto", { forceCreateNewPage: manualSelectedMode }),
           BRIEF_TIMEOUT_MS,
           `Brief for plan #${item.id}`,
         );

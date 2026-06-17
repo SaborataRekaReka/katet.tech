@@ -7,7 +7,15 @@ const DEFAULT_SEMANTICS_CLEANING = {
 };
 
 function getSeoApiBaseUrl() {
-  return (process.env.SEO_STUDIO_API_BASE_URL || "http://host.docker.internal:3000").replace(/\/$/, "");
+  const explicit = (process.env.SEO_STUDIO_API_BASE_URL || "").trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  // Prevent runtime fetch failures on Linux production hosts where host.docker.internal is unavailable.
+  if ((process.env.NODE_ENV || "").toLowerCase() === "production") {
+    return "https://katet.tech";
+  }
+
+  return "http://host.docker.internal:3000";
 }
 
 function getSeoTokenFromEnv() {
@@ -773,8 +781,7 @@ export default defineEndpoint((router, { database }) => {
          JOIN seo.content_plan_items p ON p.cluster_id = c.id
          LEFT JOIN seo.cluster_keywords ck ON ck.cluster_id = c.id
          WHERE c.status <> 'archived'
-           AND p.status NOT IN ('rejected', 'published', 'content_generated')
-           AND COALESCE(p.recommended_action, '') <> 'no_action'
+           AND p.status NOT IN ('published', 'content_generated')
            AND NOT EXISTS (
              SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id
            )

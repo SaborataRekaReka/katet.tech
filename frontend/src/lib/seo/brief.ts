@@ -76,7 +76,16 @@ function fallbackBrief(cluster: ClusterRow, keywords: { keyword: string; role: s
 }
 
 /** Generate and persist a brief for a plan item. Returns the brief id. */
-export async function generateBrief(planItemId: number, reviewer = "system"): Promise<number> {
+type GenerateBriefOptions = {
+  forceCreateNewPage?: boolean;
+};
+
+/** Generate and persist a brief for a plan item. Returns the brief id. */
+export async function generateBrief(
+  planItemId: number,
+  reviewer = "system",
+  options: GenerateBriefOptions = {},
+): Promise<number> {
   const plan = await one<PlanRow>(
     `SELECT id, cluster_id, page_type, recommended_action, target_existing_url, proposed_title
      FROM seo.content_plan_items WHERE id = $1`,
@@ -94,6 +103,9 @@ export async function generateBrief(planItemId: number, reviewer = "system"): Pr
   const context = await loadContext();
   const facts = collectFacts(context);
   const pageType = plan.page_type ?? "article";
+  const forceCreateNewPage = options.forceCreateNewPage === true;
+  const recommendedAction = forceCreateNewPage ? "create_new_page" : plan.recommended_action;
+  const targetExistingUrl = forceCreateNewPage ? null : plan.target_existing_url;
 
   let brief = fallbackBrief(cluster, keywords, pageType);
   const llm = await chatJson<ContentBrief>({
@@ -102,11 +114,15 @@ export async function generateBrief(planItemId: number, reviewer = "system"): Pr
     system:
       "Ты SEO-стратег и редактор. Сформируй техническое задание (ТЗ) на страницу строго на основе переданного кластера запросов и фактов компании. " +
       "ЗАПРЕЩЕНО: придумывать тему самому, добавлять ключи которых нет в кластере, добавлять услуги/цены/характеристики/районы которых нет в фактах. " +
+      (forceCreateNewPage
+        ? "Оператор явно запросил НОВУЮ самостоятельную страницу. Не предлагай патчи существующих URL и не добавляй служебные пометки для редактора. "
+        : "") +
       "Если данных не хватает — перечисли их в missing_data. Верни строго JSON с полями: page_goal, page_type, search_intent, target_user, business_goal, primary_keyword, secondary_keywords[], questions_to_answer[], required_blocks[], forbidden_claims[], source_facts[], missing_data[], internal_link_targets[], cta_requirements[], meta_requirements{title_rule, description_rule}, schema_requirements[], quality_requirements[].",
     user: JSON.stringify({
       page_type: pageType,
-      recommended_action: plan.recommended_action,
-      target_existing_url: plan.target_existing_url,
+      recommended_action: recommendedAction,
+      target_existing_url: targetExistingUrl,
+      force_create_new_page: forceCreateNewPage,
       main_intent: cluster.main_intent,
       primary_keyword: cluster.primary_keyword,
       cluster_keywords: keywords.map((k) => k.keyword),

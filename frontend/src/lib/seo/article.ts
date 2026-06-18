@@ -74,6 +74,35 @@ function asTextList(values: unknown, limit = 8): string[] {
   return out;
 }
 
+function compactText(value: unknown, maxLength: number): string {
+  const text = asText(value).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function compactResearchSources(value: unknown, maxItems: number): Array<{ title: string; url: string; snippet?: string }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ title: string; url: string; snippet?: string }> = [];
+  const seen = new Set<string>();
+
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as Record<string, unknown>;
+    const url = sanitizeExternalUrl(item.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+
+    const title = compactText(item.title || url, 140);
+    const snippet = compactText(item.snippet, 260);
+    out.push(snippet ? { title, url, snippet } : { title, url });
+
+    if (out.length >= maxItems) break;
+  }
+
+  return out;
+}
+
 function listHtml(items: string[]): string {
   if (items.length === 0) return "";
   return `<ul>\n${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("\n")}\n</ul>`;
@@ -81,6 +110,12 @@ function listHtml(items: string[]): string {
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw)) return fallback;
+  return clampInt(raw, min, max);
 }
 
 type FallbackSectionData = {
@@ -154,6 +189,50 @@ function buildFallbackSectionData(brief: ContentBrief): FallbackSectionData {
     sourceFacts: asTextList(brief.source_facts, 12),
     missingData: asTextList(brief.missing_data, 6),
     researchSummary: asText(brief.research_summary).trim(),
+  };
+}
+
+function buildArticlePromptPayload(brief: ContentBrief): Record<string, unknown> {
+  const length = brief.length_requirements;
+  const lengthRequirements = length && typeof length === "object"
+    ? {
+        min_chars: clampInt(Number(length.min_chars) || 0, 1200, 12000),
+        target_chars: clampInt(Number(length.target_chars) || 0, 1400, 14000),
+        max_chars: clampInt(Number(length.max_chars) || 0, 1600, 18000),
+      }
+    : undefined;
+
+  return {
+    page_goal: compactText(brief.page_goal, 240),
+    page_type: compactText(brief.page_type, 80),
+    search_intent: compactText(brief.search_intent, 120),
+    target_user: compactText(brief.target_user, 240),
+    business_goal: compactText(brief.business_goal, 240),
+    primary_keyword: compactText(brief.primary_keyword, 180),
+    secondary_keywords: asTextList(brief.secondary_keywords, 14),
+    questions_to_answer: asTextList(brief.questions_to_answer, 12),
+    required_blocks: asTextList(brief.required_blocks, 10),
+    forbidden_claims: asTextList(brief.forbidden_claims, 10),
+    source_facts: asTextList(brief.source_facts, 16),
+    missing_data: asTextList(brief.missing_data, 8),
+    internal_link_targets: asTextList(brief.internal_link_targets, 8),
+    cta_requirements: asTextList(brief.cta_requirements, 8),
+    meta_requirements: {
+      title_rule: compactText(brief.meta_requirements?.title_rule, 220),
+      description_rule: compactText(brief.meta_requirements?.description_rule, 220),
+    },
+    schema_requirements: asTextList(brief.schema_requirements, 6),
+    quality_requirements: asTextList(brief.quality_requirements, 10),
+    next_question_intents: asTextList(brief.next_question_intents, 8),
+    differentiation_points: asTextList(brief.differentiation_points, 8),
+    evidence_requirements: asTextList(brief.evidence_requirements, 8),
+    trust_signals: asTextList(brief.trust_signals, 8),
+    serp_features: asTextList(brief.serp_features, 8),
+    external_source_policy: compactText(brief.external_source_policy, 1000),
+    keyword_usage_policy: compactText(brief.keyword_usage_policy, 1000),
+    length_requirements: lengthRequirements,
+    research_summary: compactText(brief.research_summary, 3200),
+    research_sources: compactResearchSources(brief.research_sources, 8),
   };
 }
 
@@ -814,10 +893,15 @@ function insertImagesEveryThreeParagraphs(bodyHtml: string, images: InsertedImag
   return out.join("");
 }
 
-async function buildImagePlan(brief: ContentBrief, article: GeneratedArticle): Promise<ImagePlacementPlan[]> {
+async function buildImagePlan(
+  brief: ContentBrief,
+  article: GeneratedArticle,
+  maxImages: number,
+): Promise<ImagePlacementPlan[]> {
+  if (maxImages <= 0) return [];
   const headings = extractHeadings(article.body_html);
   const paragraphTotal = paragraphCount(article.body_html);
-  const planned = Math.max(1, Math.min(4, Math.floor(paragraphTotal / 3)));
+  const planned = Math.max(1, Math.min(maxImages, Math.floor(paragraphTotal / 3)));
   const llm = await chatJson<ImagePlanResponse>({
     modelSlot: "cheap",
     system:
@@ -857,8 +941,9 @@ async function generateAndInsertImages(
   article: GeneratedArticle,
   brief: ContentBrief,
   isTimedOut?: () => boolean,
+  maxImages = 4,
 ): Promise<string> {
-  const plan = await buildImagePlan(brief, article);
+  const plan = await buildImagePlan(brief, article, maxImages);
   if (plan.length === 0) return article.body_html;
 
   const publicDir = resolvePublicDir();
@@ -893,6 +978,8 @@ async function generateAndInsertImages(
 
 type GenerateArticleOptions = {
   isTimedOut?: () => boolean;
+  remainingMs?: () => number;
+  disableImages?: boolean;
 };
 
 /** Generate and persist an article draft for a plan item with a ready brief. */
@@ -911,9 +998,12 @@ export async function generateArticle(planItemId: number, options: GenerateArtic
   const tryLlmInFallback = process.env.SEO_TRY_LLM_WITH_FALLBACK !== "0";
   const tryImagesInFallback = process.env.SEO_TRY_IMAGES_WITH_FALLBACK === "1";
   const allowTemplateOnQuota = process.env.SEO_ALLOW_TEMPLATE_ON_QUOTA === "1";
+  const minImageBudgetMs = envInt("SEO_ARTICLE_IMAGE_MIN_REMAINING_MS", 120_000, 0, 3_600_000);
+  const maxArticleImages = envInt("SEO_ARTICLE_MAX_IMAGES", 3, 0, 6);
   const shouldCallLlm = !allowFallback || tryLlmInFallback;
   let article = fallbackArticle(brief);
   let articleMode: "fallback" | "llm" = "fallback";
+  const articlePrompt = buildArticlePromptPayload(brief);
 
   const llm = shouldCallLlm
     ? await chatJson<GeneratedArticle>({
@@ -941,7 +1031,7 @@ export async function generateArticle(planItemId: number, options: GenerateArtic
         "Естественно используй primary_keyword и secondary_keywords. " +
         "Верни строго JSON: {title, slug, seo_title, meta_description, body_html, faq:[{question,answer}]}. " +
         "body_html — валидный HTML с <h2>/<p>/<ul>; без <html>/<body>. slug — латиницей. meta_description до 160 символов.",
-      user: JSON.stringify(brief),
+      user: JSON.stringify(articlePrompt),
     })
     : null;
   if (llm && llm.title && llm.body_html) {
@@ -994,8 +1084,19 @@ export async function generateArticle(planItemId: number, options: GenerateArtic
   if (options.isTimedOut?.()) {
     throw new Error(`Article for plan #${planItemId}: timed out before media generation`);
   }
-  if (!allowFallback || tryImagesInFallback) {
-    article.body_html = await generateAndInsertImages(article, brief, options.isTimedOut);
+  const hasImageTimeBudget = options.remainingMs ? options.remainingMs() >= minImageBudgetMs : true;
+  const shouldGenerateImages =
+    !options.disableImages &&
+    maxArticleImages > 0 &&
+    hasImageTimeBudget &&
+    (!allowFallback || tryImagesInFallback);
+
+  if (shouldGenerateImages) {
+    article.body_html = await generateAndInsertImages(article, brief, options.isTimedOut, maxArticleImages);
+  } else if (!hasImageTimeBudget) {
+    console.warn(
+      `[seo/article] skip images for plan #${planItemId}: remaining time ${options.remainingMs?.()}ms below budget ${minImageBudgetMs}ms`,
+    );
   }
 
   if (options.isTimedOut?.()) {

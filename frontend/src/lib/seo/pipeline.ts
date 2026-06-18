@@ -8,6 +8,7 @@ import { clusterize } from "./cluster";
 import { generatePlan } from "./plan";
 import { generateBrief } from "./brief";
 import { generateArticle } from "./article";
+import { getLlmModelsConfig } from "./openai";
 import { resetSiteCache } from "./siteGap";
 import { getScoringConfig, getSemanticsCleaningConfig } from "./settings";
 
@@ -31,11 +32,19 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
 
 const BRIEF_TIMEOUT_MS = envInt("SEO_BRIEF_TIMEOUT_MS", 300_000, 10_000, 3_600_000);
 const ARTICLE_TIMEOUT_MS = envInt("SEO_ARTICLE_TIMEOUT_MS", 300_000, 10_000, 3_600_000);
+const ARTICLE_RETRY_TIMEOUT_MS = envInt("SEO_ARTICLE_RETRY_TIMEOUT_MS", 240_000, 10_000, 3_600_000);
+const ARTICLE_TIMEOUT_REASONING_MS = envInt("SEO_ARTICLE_TIMEOUT_REASONING_MS", 900_000, 10_000, 3_600_000);
+const ARTICLE_RETRY_TIMEOUT_REASONING_MS = envInt(
+  "SEO_ARTICLE_RETRY_TIMEOUT_REASONING_MS",
+  420_000,
+  10_000,
+  3_600_000,
+);
 
 type DraftFailure = { planItemId: number; reason: string };
 type DraftBatchResult = { drafted: number; total: number; failures: DraftFailure[] };
 type DraftPhase = "start" | "brief" | "article" | "success" | "error";
-type TimeoutState = { isTimedOut: () => boolean };
+type TimeoutState = { isTimedOut: () => boolean; remainingMs: () => number };
 type DraftProgressEvent = {
   drafted: number;
   total: number;
@@ -50,12 +59,38 @@ function reasonFromError(error: unknown): string {
   return String(error);
 }
 
+function isArticleTimeoutReason(reason: string, planItemId: number): boolean {
+  return reason.includes(`Article for plan #${planItemId}: timeout after`);
+}
+
+function isReasoningModelName(model: string): boolean {
+  return /^(gpt-5|o\d)/i.test(model);
+}
+
+async function resolveArticleTimeouts(): Promise<{ articleMs: number; retryMs: number }> {
+  let articleMs = ARTICLE_TIMEOUT_MS;
+  let retryMs = ARTICLE_RETRY_TIMEOUT_MS;
+
+  try {
+    const models = await getLlmModelsConfig();
+    if (isReasoningModelName(models.strong || "")) {
+      articleMs = Math.max(articleMs, ARTICLE_TIMEOUT_REASONING_MS);
+      retryMs = Math.max(retryMs, ARTICLE_RETRY_TIMEOUT_REASONING_MS);
+    }
+  } catch {
+    // Keep env defaults when model settings are temporarily unavailable.
+  }
+
+  return { articleMs, retryMs };
+}
+
 async function withTimeout<T>(
   operation: (timeout: TimeoutState) => Promise<T>,
   timeoutMs: number,
   label: string,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const startedAt = Date.now();
     let settled = false;
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -65,7 +100,10 @@ async function withTimeout<T>(
       reject(new Error(`${label}: timeout after ${Math.round(timeoutMs / 1000)}s`));
     }, timeoutMs);
 
-    void operation({ isTimedOut: () => timedOut })
+    void operation({
+      isTimedOut: () => timedOut,
+      remainingMs: () => Math.max(0, timeoutMs - (Date.now() - startedAt)),
+    })
       .then((value) => {
         if (settled) return;
         settled = true;
@@ -172,6 +210,7 @@ async function draftTopArticles(
 
   let drafted = 0;
   const failures: DraftFailure[] = [];
+  const articleTimeouts = await resolveArticleTimeouts();
   for (const item of top) {
     await onProgress?.({
       drafted,
@@ -215,8 +254,9 @@ async function draftTopArticles(
         (timeout) =>
           generateArticle(item.id, {
             isTimedOut: timeout.isTimedOut,
+            remainingMs: timeout.remainingMs,
           }),
-        ARTICLE_TIMEOUT_MS,
+        articleTimeouts.articleMs,
         `Article for plan #${item.id}`,
       );
 
@@ -230,7 +270,43 @@ async function draftTopArticles(
         message: `Создан черновик по плану #${item.id}: ${drafted}/${top.length}`,
       });
     } catch (error) {
-      const reason = reasonFromError(error);
+      let reason = reasonFromError(error);
+
+      if (isArticleTimeoutReason(reason, item.id)) {
+        await onProgress?.({
+          drafted,
+          total: top.length,
+          planItemId: item.id,
+          phase: "article",
+          message: `План #${item.id}: таймаут, повтор без изображений`,
+        });
+
+        try {
+          await withTimeout(
+            (timeout) =>
+              generateArticle(item.id, {
+                isTimedOut: timeout.isTimedOut,
+                remainingMs: timeout.remainingMs,
+                disableImages: true,
+              }),
+            articleTimeouts.retryMs,
+            `Article retry for plan #${item.id}`,
+          );
+
+          drafted += 1;
+          await onProgress?.({
+            drafted,
+            total: top.length,
+            planItemId: item.id,
+            phase: "success",
+            message: `Создан черновик по плану #${item.id} (повтор без изображений): ${drafted}/${top.length}`,
+          });
+          continue;
+        } catch (retryError) {
+          reason = `${reason}; retry_failed: ${reasonFromError(retryError)}`;
+        }
+      }
+
       failures.push({ planItemId: item.id, reason });
       await onProgress?.({
         drafted,

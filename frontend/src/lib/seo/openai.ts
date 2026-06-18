@@ -663,10 +663,12 @@ export async function webResearch(topic: string, options?: { maxSources?: number
   if (!query) return null;
 
   const maxSources = Math.max(3, Math.min(options?.maxSources ?? 8, 12));
+  const models = await getLlmModelsConfig().catch(() => ENV_MODELS);
+  const model = models.cheap || "gpt-5-mini";
 
   try {
     const response = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model,
       instructions:
         "Проведи веб-ресерч и верни один JSON-объект формата {summary, sources:[{title,url,snippet}]}. " +
         "summary: 6-10 тезисов по теме на русском, нейтрально и фактически. " +

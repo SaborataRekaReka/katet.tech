@@ -147,6 +147,18 @@ export type ContentBrief = {
   meta_requirements: { title_rule: string; description_rule: string };
   schema_requirements: string[];
   quality_requirements: string[];
+  next_question_intents?: string[];
+  differentiation_points?: string[];
+  evidence_requirements?: string[];
+  trust_signals?: string[];
+  serp_features?: string[];
+  external_source_policy?: string;
+  keyword_usage_policy?: string;
+  length_requirements?: {
+    min_chars: number;
+    target_chars: number;
+    max_chars: number;
+  };
   research_summary?: string;
   research_sources?: ResearchSource[];
 };

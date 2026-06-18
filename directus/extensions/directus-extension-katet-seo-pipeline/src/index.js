@@ -132,6 +132,81 @@ function getContentStatus(row) {
   return "awaiting";
 }
 
+/**
+ * Keep seo.generated_articles/content_plan_items consistent with actual blog post status.
+ * If a linked post is no longer published (or removed), the SEO article is reopened as draft
+ * and the plan item becomes regeneratable again.
+ */
+async function reconcileSeoArticleLinks(database) {
+  await database.raw(
+    `UPDATE seo.generated_articles a
+       SET status = 'draft',
+           published_post_id = NULL,
+           published_at = NULL,
+           url_path = NULL,
+           updated_at = NOW()
+     WHERE a.status = 'published'
+       AND a.published_post_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1
+         FROM public.posts p
+         WHERE p.id = a.published_post_id
+           AND p.status = 'publish'
+       )`,
+  );
+
+  await database.raw(
+    `UPDATE seo.content_plan_items p
+       SET status = CASE
+             WHEN EXISTS (
+               SELECT 1 FROM seo.content_briefs b WHERE b.content_plan_item_id = p.id
+             ) THEN 'brief_created'
+             ELSE 'approved'
+           END,
+           updated_at = NOW()
+     WHERE p.status IN ('published', 'content_generated')
+       AND NOT EXISTS (
+         SELECT 1
+         FROM seo.generated_articles a
+         LEFT JOIN public.posts post ON post.id = a.published_post_id
+         WHERE a.content_plan_item_id = p.id
+           AND ${activeArticlePredicateSql("a", "post")}
+       )`,
+  );
+}
+
+function activeArticlePredicateSql(articleAlias = "a", postAlias = "post") {
+  return `(
+    ${articleAlias}.status IN ('draft', 'needs_review', 'approved')
+    OR (
+      ${articleAlias}.status = 'published'
+      AND ${postAlias}.id IS NOT NULL
+      AND ${postAlias}.status = 'publish'
+    )
+  )`;
+}
+
+function activePlanArticleExistsSql(planIdExpr = "p.id") {
+  return `EXISTS (
+    SELECT 1
+    FROM seo.generated_articles a
+    LEFT JOIN public.posts post ON post.id = a.published_post_id
+    WHERE a.content_plan_item_id = ${planIdExpr}
+      AND ${activeArticlePredicateSql("a", "post")}
+  )`;
+}
+
+function activeClusterArticleExistsSql(clusterIdExpr = "c.id") {
+  return `EXISTS (
+    SELECT 1
+    FROM seo.generated_articles a
+    JOIN seo.content_plan_items p2 ON p2.id = a.content_plan_item_id
+    LEFT JOIN public.posts post ON post.id = a.published_post_id
+    WHERE p2.cluster_id = ${clusterIdExpr}
+      AND ${activeArticlePredicateSql("a", "post")}
+  )`;
+}
+
 export default defineEndpoint((router, { database }) => {
   async function proxy(req, res, targetPath, method = "GET", body = undefined) {
     const requestToken = getIncomingToken(req);
@@ -155,6 +230,8 @@ export default defineEndpoint((router, { database }) => {
 
   router.get("/summary", async (_req, res) => {
     try {
+      await reconcileSeoArticleLinks(database);
+
       const result = await database.raw(
         `SELECT
             COALESCE((SELECT value->>'mode' FROM seo.settings WHERE key = 'wordstat' LIMIT 1), 'csv') AS mode,
@@ -228,6 +305,8 @@ export default defineEndpoint((router, { database }) => {
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
     try {
+      await reconcileSeoArticleLinks(database);
+
       const totalResult = await database.raw(
         `SELECT COUNT(*)::int AS n
          FROM seo.normalized_keywords n
@@ -248,12 +327,7 @@ export default defineEndpoint((router, { database }) => {
             n.is_relevant,
             c.id AS cluster_id,
             c.cluster_name,
-            EXISTS (
-              SELECT 1
-              FROM seo.generated_articles a
-              JOIN seo.content_plan_items p ON p.id = a.content_plan_item_id
-              WHERE p.cluster_id = c.id
-            ) AS has_article,
+            ${activeClusterArticleExistsSql("c.id")} AS has_article,
             (
               SELECT p.status
               FROM seo.content_plan_items p
@@ -340,6 +414,8 @@ export default defineEndpoint((router, { database }) => {
 
   router.get("/semantics/stats", async (_req, res) => {
     try {
+      await reconcileSeoArticleLinks(database);
+
       const result = await database.raw(
         `SELECT
             COALESCE((SELECT value->>'mode' FROM seo.settings WHERE key = 'wordstat' LIMIT 1), 'csv') AS mode,
@@ -354,7 +430,7 @@ export default defineEndpoint((router, { database }) => {
             (SELECT COUNT(*)::int FROM seo.content_plan_items) AS plan_items,
             (SELECT COUNT(*)::int FROM seo.content_plan_items p
               WHERE p.status IN ('content_generated', 'published')
-              OR EXISTS (SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id)
+              OR ${activePlanArticleExistsSql("p.id")}
             ) AS content_closed`
       );
 
@@ -473,6 +549,8 @@ export default defineEndpoint((router, { database }) => {
   router.get("/semantics/clusters", async (req, res) => {
     const limit = toInt(req.query.limit, 100, 20, 500);
     try {
+      await reconcileSeoArticleLinks(database);
+
       const result = await database.raw(
         `SELECT
             c.id,
@@ -490,8 +568,16 @@ export default defineEndpoint((router, { database }) => {
             COALESCE(p.target_existing_url, c.target_existing_url) AS target_existing_url,
             NULLIF(c.decision_log->'gap'->>'best_score', '')::numeric AS coverage_score,
             COALESCE(c.decision_log->'gap'->'similar_pages', '[]'::jsonb) AS related_pages_raw,
-            EXISTS (SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id) AS has_article,
-            (SELECT a.id FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id ORDER BY a.id DESC LIMIT 1) AS article_id
+            ${activePlanArticleExistsSql("p.id")} AS has_article,
+            (
+              SELECT a.id
+              FROM seo.generated_articles a
+              LEFT JOIN public.posts post ON post.id = a.published_post_id
+              WHERE a.content_plan_item_id = p.id
+                AND ${activeArticlePredicateSql("a", "post")}
+              ORDER BY a.id DESC
+              LIMIT 1
+            ) AS article_id
          FROM seo.keyword_clusters c
          LEFT JOIN seo.cluster_keywords ck ON ck.cluster_id = c.id
          LEFT JOIN seo.content_plan_items p ON p.cluster_id = c.id
@@ -727,6 +813,8 @@ export default defineEndpoint((router, { database }) => {
 
   router.get("/generatable-clusters", async (_req, res) => {
     try {
+      await reconcileSeoArticleLinks(database);
+
       // Manual clusters can exist without a plan item (for example after ad-hoc merges in Queries).
       // Auto-seed missing plan rows so such clusters become available in the Generation tab.
       await database.raw(
@@ -760,12 +848,7 @@ export default defineEndpoint((router, { database }) => {
          WHERE p.id IS NULL
            AND c.status <> 'archived'
            AND EXISTS (SELECT 1 FROM seo.cluster_keywords ck WHERE ck.cluster_id = c.id)
-           AND NOT EXISTS (
-             SELECT 1
-             FROM seo.generated_articles a
-             JOIN seo.content_plan_items p2 ON p2.id = a.content_plan_item_id
-             WHERE p2.cluster_id = c.id
-           )`,
+           AND NOT ${activeClusterArticleExistsSql("c.id")}`,
       );
 
       const result = await database.raw(
@@ -782,9 +865,7 @@ export default defineEndpoint((router, { database }) => {
          LEFT JOIN seo.cluster_keywords ck ON ck.cluster_id = c.id
          WHERE c.status <> 'archived'
            AND p.status NOT IN ('published', 'content_generated')
-           AND NOT EXISTS (
-             SELECT 1 FROM seo.generated_articles a WHERE a.content_plan_item_id = p.id
-           )
+           AND NOT ${activePlanArticleExistsSql("p.id")}
          GROUP BY c.id, p.id
          ORDER BY p.priority DESC NULLS LAST, c.total_frequency DESC, c.id DESC`,
       );
@@ -810,6 +891,8 @@ export default defineEndpoint((router, { database }) => {
     const status = statusRaw || null;
 
     try {
+      await reconcileSeoArticleLinks(database);
+
       const result = await database.raw(
         `SELECT
             p.id,
@@ -827,15 +910,17 @@ export default defineEndpoint((router, { database }) => {
             c.primary_keyword,
             c.main_intent,
             c.total_frequency,
-            EXISTS (SELECT 1 FROM seo.generated_articles x WHERE x.content_plan_item_id = p.id) AS has_article,
+            ${activePlanArticleExistsSql("p.id")} AS has_article,
             a.id AS article_id,
             a.status AS article_status
          FROM seo.content_plan_items p
          LEFT JOIN seo.keyword_clusters c ON c.id = p.cluster_id
          LEFT JOIN LATERAL (
-           SELECT id, status
+           SELECT ga.id, ga.status
            FROM seo.generated_articles ga
+           LEFT JOIN public.posts post ON post.id = ga.published_post_id
            WHERE ga.content_plan_item_id = p.id
+             AND ${activeArticlePredicateSql("ga", "post")}
            ORDER BY ga.id DESC
            LIMIT 1
          ) a ON TRUE
@@ -858,6 +943,8 @@ export default defineEndpoint((router, { database }) => {
     const status = statusRaw || null;
 
     try {
+      await reconcileSeoArticleLinks(database);
+
       const result = await database.raw(
         `SELECT
             a.id,
@@ -914,6 +1001,8 @@ export default defineEndpoint((router, { database }) => {
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
     try {
+      await reconcileSeoArticleLinks(database);
+
       const result = await database.raw(
         `SELECT
             post.id,
@@ -973,6 +1062,9 @@ export default defineEndpoint((router, { database }) => {
         `UPDATE public.posts SET status = ?, wp_updated_at = NOW() WHERE id = ?`,
         [status, toInt(req.params.id, 0, 0)],
       );
+
+      await reconcileSeoArticleLinks(database);
+
       res.json({ ok: true });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "post_status_failed" });

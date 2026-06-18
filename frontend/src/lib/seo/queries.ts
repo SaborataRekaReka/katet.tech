@@ -329,6 +329,19 @@ export async function getSemanticsClustersList(limit = 100): Promise<SemanticsCl
      LEFT JOIN seo.cluster_keywords ck ON ck.cluster_id = c.id
      LEFT JOIN seo.content_plan_items p ON p.cluster_id = c.id
     WHERE c.status <> 'archived'
+       OR EXISTS (
+         SELECT 1
+         FROM seo.content_plan_items p_keep
+         WHERE p_keep.cluster_id = c.id
+           AND (
+             p_keep.status IN ('content_generated', 'published')
+             OR EXISTS (
+               SELECT 1
+               FROM seo.generated_articles a_keep
+               WHERE a_keep.content_plan_item_id = p_keep.id
+             )
+           )
+       )
      GROUP BY c.id, p.id
      ORDER BY COALESCE(p.priority, c.content_priority_score, 0) DESC, c.total_frequency DESC, c.id DESC
      LIMIT $1`,

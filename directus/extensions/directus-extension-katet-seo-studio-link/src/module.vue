@@ -2642,7 +2642,13 @@ async function setPostStatus(postId, status) {
   try {
     await api(`/posts/${postId}/status`, { method: "POST", body: { status } });
     setInfo(`Запись #${postId}: статус ${status}`);
-    await Promise.all([loadPosts(), loadSummary()]);
+    await Promise.all([
+      loadPosts(),
+      loadSummary(),
+      loadArticles(),
+      loadPlan(),
+      loadGeneratableClusters(),
+    ]);
   } catch (err) {
     setError(err instanceof Error ? err.message : "Не удалось изменить статус записи");
   } finally {

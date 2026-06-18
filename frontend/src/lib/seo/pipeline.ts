@@ -35,6 +35,7 @@ const ARTICLE_TIMEOUT_MS = envInt("SEO_ARTICLE_TIMEOUT_MS", 300_000, 10_000, 3_6
 type DraftFailure = { planItemId: number; reason: string };
 type DraftBatchResult = { drafted: number; total: number; failures: DraftFailure[] };
 type DraftPhase = "start" | "brief" | "article" | "success" | "error";
+type TimeoutState = { isTimedOut: () => boolean };
 type DraftProgressEvent = {
   drafted: number;
   total: number;
@@ -49,18 +50,31 @@ function reasonFromError(error: unknown): string {
   return String(error);
 }
 
-async function withTimeout<T>(operation: () => Promise<T>, timeoutMs: number, label: string): Promise<T> {
+async function withTimeout<T>(
+  operation: (timeout: TimeoutState) => Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let timedOut = false;
     const timer = setTimeout(() => {
+      timedOut = true;
+      if (settled) return;
+      settled = true;
       reject(new Error(`${label}: timeout after ${Math.round(timeoutMs / 1000)}s`));
     }, timeoutMs);
 
-    void operation()
+    void operation({ isTimedOut: () => timedOut })
       .then((value) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         resolve(value);
       })
       .catch((error) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         reject(error);
       });
@@ -198,7 +212,10 @@ async function draftTopArticles(
       });
 
       await withTimeout(
-        () => generateArticle(item.id),
+        (timeout) =>
+          generateArticle(item.id, {
+            isTimedOut: timeout.isTimedOut,
+          }),
         ARTICLE_TIMEOUT_MS,
         `Article for plan #${item.id}`,
       );

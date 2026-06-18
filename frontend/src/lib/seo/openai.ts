@@ -423,7 +423,7 @@ async function repairJsonPayloadWithLlm(
         "Escape quotes and line breaks correctly.",
       input: JSON.stringify(payload),
       ...(reasoning ? {} : { temperature: 0 }),
-      ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
+      ...(maxTokens && !reasoning ? { max_output_tokens: maxTokens } : {}),
     });
 
     const repaired = extractTextFromResponse(response);
@@ -493,13 +493,14 @@ export async function chatJson<T>(options: ChatJsonOptions): Promise<T | null> {
   const slot = options.modelSlot ?? "cheap";
   const model = options.model?.trim() || models[slot] || models.cheap;
   const reasoning = isReasoningModel(model);
+  const maxOutputTokens = options.maxTokens && !reasoning ? options.maxTokens : undefined;
   try {
     const response = await client.responses.create({
       model,
       instructions: `${options.system}\n\nReturn only a single valid JSON object. No markdown, no commentary.`,
       input: options.user,
       ...(reasoning ? {} : { temperature: options.temperature ?? 0.2 }),
-      ...(options.maxTokens ? { max_output_tokens: options.maxTokens } : {}),
+      ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
     });
     const content = extractTextFromResponse(response);
     if (!content) {
@@ -551,13 +552,14 @@ export async function chatText(options: ChatJsonOptions): Promise<string | null>
   const slot = options.modelSlot ?? "strong";
   const model = options.model?.trim() || models[slot] || models.strong;
   const reasoning = isReasoningModel(model);
+  const maxOutputTokens = options.maxTokens && !reasoning ? options.maxTokens : undefined;
   try {
     const response = await client.responses.create({
       model,
       instructions: options.system,
       input: options.user,
       ...(reasoning ? {} : { temperature: options.temperature ?? 0.5 }),
-      ...(options.maxTokens ? { max_output_tokens: options.maxTokens } : {}),
+      ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
     });
     const text = extractTextFromResponse(response);
     if (!text) {
@@ -665,6 +667,7 @@ export async function webResearch(topic: string, options?: { maxSources?: number
   const maxSources = Math.max(3, Math.min(options?.maxSources ?? 8, 12));
   const models = await getLlmModelsConfig().catch(() => ENV_MODELS);
   const model = models.cheap || "gpt-5-mini";
+  const reasoning = isReasoningModel(model);
 
   try {
     const response = await client.responses.create({
@@ -675,7 +678,7 @@ export async function webResearch(topic: string, options?: { maxSources?: number
         "sources: только реальные http/https URL, без дублей. Не выдумывай источники.",
       input: JSON.stringify({ topic: query, max_sources: maxSources }),
       tools: [{ type: "web_search_preview" }],
-      temperature: 0.2,
+      ...(reasoning ? {} : { temperature: 0.2 }),
       max_output_tokens: 1400,
     });
 

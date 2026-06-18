@@ -853,7 +853,11 @@ async function buildImagePlan(brief: ContentBrief, article: GeneratedArticle): P
   }));
 }
 
-async function generateAndInsertImages(article: GeneratedArticle, brief: ContentBrief): Promise<string> {
+async function generateAndInsertImages(
+  article: GeneratedArticle,
+  brief: ContentBrief,
+  isTimedOut?: () => boolean,
+): Promise<string> {
   const plan = await buildImagePlan(brief, article);
   if (plan.length === 0) return article.body_html;
 
@@ -863,6 +867,7 @@ async function generateAndInsertImages(article: GeneratedArticle, brief: Content
 
   const inserted: InsertedImage[] = [];
   for (let index = 0; index < plan.length; index += 1) {
+    if (isTimedOut?.()) break;
     const item = plan[index];
     const image = await generateImage(item.prompt, "1536x1024");
     if (!image) continue;
@@ -886,8 +891,12 @@ async function generateAndInsertImages(article: GeneratedArticle, brief: Content
   return insertImagesEveryThreeParagraphs(byAnchor.html, byAnchor.rest);
 }
 
+type GenerateArticleOptions = {
+  isTimedOut?: () => boolean;
+};
+
 /** Generate and persist an article draft for a plan item with a ready brief. */
-export async function generateArticle(planItemId: number): Promise<number> {
+export async function generateArticle(planItemId: number, options: GenerateArticleOptions = {}): Promise<number> {
   const briefRow = await one<{ id: number; brief: ContentBrief }>(
     `SELECT id, brief FROM seo.content_briefs WHERE content_plan_item_id = $1 ORDER BY id DESC LIMIT 1`,
     [planItemId],
@@ -982,8 +991,15 @@ export async function generateArticle(planItemId: number): Promise<number> {
 
   article.body_html = postEditArticleBody(article.body_html, brief, articleMode);
   article.body_html = appendSourcesBlock(article.body_html, brief);
+  if (options.isTimedOut?.()) {
+    throw new Error(`Article for plan #${planItemId}: timed out before media generation`);
+  }
   if (!allowFallback || tryImagesInFallback) {
-    article.body_html = await generateAndInsertImages(article, brief);
+    article.body_html = await generateAndInsertImages(article, brief, options.isTimedOut);
+  }
+
+  if (options.isTimedOut?.()) {
+    throw new Error(`Article for plan #${planItemId}: timed out before persistence`);
   }
 
   const urlPath = `/${article.slug || "stranica"}/`;

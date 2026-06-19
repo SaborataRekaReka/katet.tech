@@ -3,11 +3,13 @@ import type { BlogCategoryRecord, EquipmentCardRecord, NavLink, RichPage, Taxono
 import { toDirectusVisualAttr } from "@/lib/directusVisual";
 import { assetUrl, canonicalForPath, excerptFromHtml, siteUrl, stripHtml } from "@/lib/format";
 import { siteContacts } from "@/lib/site";
+import { EquipmentCard } from "@/components/equipment/EquipmentCard";
 import { LeadCaptureForm } from "@/components/forms/LeadCaptureForm";
 import { SmartEquipmentCatalog } from "@/components/catalog/SmartEquipmentCatalog";
 import { HeroLead } from "@/components/marketing/HeroLead";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ActionLink } from "@/components/ui/Button";
+import { Carousel } from "@/components/ui/Carousel";
 import { ContactLink } from "@/components/ui/ContactLinks";
 import { CalendarIcon, ClockIcon, ListIcon, MailIcon, PhoneCallIcon, PinIcon, TelegramIcon, WhatsAppIcon } from "@/components/ui/icons";
 import { AboutAccordionPageView } from "./AboutAccordionPageView";
@@ -35,6 +37,12 @@ type ParagraphSlice = {
 type CitySeoSplit = {
   introHtml: string;
   detailsHtml: string;
+};
+
+type ArticleEquipmentSection = {
+  title: string;
+  description?: string;
+  items: EquipmentCardRecord[];
 };
 
 function ArticleMetaIcon({ kind }: { kind: "updated" | "reading" | "sections" }) {
@@ -399,17 +407,21 @@ export function ContentPageView({
   cityEquipment,
   cityCategories,
   blogCategories,
+  articleEquipmentSection,
 }: {
   record: RichPage;
   kind?: string;
   cityEquipment?: EquipmentCardRecord[] | null;
   cityCategories?: TaxonomyPageRecord[] | null;
   blogCategories?: BlogCategoryRecord[] | null;
+  articleEquipmentSection?: ArticleEquipmentSection | null;
 }) {
   if (record.url_path === "/contacty/") return <ContactPageView record={record} />;
   if (record.url_path === "/o-nas/") return <AboutAccordionPageView record={record} />;
   if (isDeliveryPaymentPath(record.url_path)) return <DeliveryPaymentPageView record={record} />;
-  if (kind === "Статья") return <ArticlePageView record={record} blogCategories={blogCategories} />;
+  if (kind === "Статья") {
+    return <ArticlePageView record={record} blogCategories={blogCategories} articleEquipmentSection={articleEquipmentSection} />;
+  }
 
   const lead = record.meta_description || excerptFromHtml(record.body, record.excerpt, 220);
   const isCityLanding = /^\/arenda-specztehniki-v-[^/]+\/$/iu.test(record.url_path || "");
@@ -589,9 +601,11 @@ function ContactPageView({ record }: { record: RichPage }) {
 function ArticlePageView({
   record,
   blogCategories,
+  articleEquipmentSection,
 }: {
   record: RichPage;
   blogCategories?: BlogCategoryRecord[] | null;
+  articleEquipmentSection?: ArticleEquipmentSection | null;
 }) {
   const lead = record.meta_description || excerptFromHtml(record.body, record.excerpt, 220);
   const cleanedBody = cleanPageBody(record);
@@ -736,6 +750,29 @@ function ArticlePageView({
           </aside>
         </div>
       </section>
+
+      {articleEquipmentSection?.items?.length ? (
+        <section className="article-template__equipment" aria-label="Подходящая спецтехника">
+          <div className="container article-template__equipment-head">
+            <h2>{articleEquipmentSection.title}</h2>
+            {articleEquipmentSection.description ? <p>{articleEquipmentSection.description}</p> : null}
+          </div>
+
+          <Carousel
+            className="container article-template__equipment-carousel"
+            ariaLabel="Подходящая спецтехника"
+            prevAriaLabel="Предыдущая карточка техники"
+            nextAriaLabel="Следующая карточка техники"
+            breakpoints={{ default: 3, widescreen: 3, tablet: 2, mobile: 1 }}
+            gap={14}
+            showDots
+          >
+            {articleEquipmentSection.items.map((item) => (
+              <EquipmentCard key={item.id} item={item} variant="archive" />
+            ))}
+          </Carousel>
+        </section>
+      ) : null}
 
       <section className="article-template__discount">
         <div className="container article-template__discount-inner">

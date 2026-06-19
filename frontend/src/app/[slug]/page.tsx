@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { ContentPageView } from "@/components/ContentViews";
 import {
+  type EquipmentCardRecord,
+  type RichPage,
   getBlogCategories,
+  getEquipmentIndex,
   getEquipmentIndexForCategorySidebar,
   getEquipmentTypesIndex,
   getPageOrPostByRootSlug,
@@ -11,6 +14,95 @@ import { metadataFrom } from "@/lib/format";
 type Props = { params: Promise<{ slug: string }> };
 
 export const revalidate = 300;
+
+type ArticleEquipmentSection = {
+  title: string;
+  description?: string;
+  items: EquipmentCardRecord[];
+};
+
+const ARTICLE_EQUIPMENT_PRESETS: Record<string, { title: string; description: string; keywords: string[]; limit: number; fetchLimit: number }> = {
+  "uplotnenie-grunta-katkom": {
+    title: "Подходящая спецтехника для уплотнения основания",
+    description: "Собрали позиции, которые чаще всего берут для уплотнения грунта, планировки и подготовки площадки.",
+    keywords: ["каток", "katok", "грунт", "grunt", "уплотн", "uplotn", "дорож", "dorozh", "вибро", "vibro", "пневмоколес", "kulach"],
+    limit: 8,
+    fetchLimit: 420,
+  },
+};
+
+function normalizeSearch(value: string | null | undefined) {
+  return (value || "").toLocaleLowerCase("ru-RU").replaceAll("ё", "е");
+}
+
+function equipmentSearchText(item: EquipmentCardRecord) {
+  const equipmentTypes = (item.equipment_types || []).map((entry) => `${entry.name} ${entry.url_path}`).join(" ");
+  const workTypes = (item.work_types || []).map((entry) => `${entry.name} ${entry.url_path}`).join(" ");
+
+  return normalizeSearch(`${item.title} ${item.slug} ${item.excerpt || ""} ${equipmentTypes} ${workTypes}`);
+}
+
+function scoreEquipmentMatch(item: EquipmentCardRecord, keywords: string[]) {
+  const title = normalizeSearch(item.title);
+  const haystack = equipmentSearchText(item);
+  let score = 0;
+
+  for (const keyword of keywords) {
+    if (!keyword) continue;
+    if (title.includes(keyword)) {
+      score += 5;
+      continue;
+    }
+
+    if (haystack.includes(keyword)) {
+      score += 2;
+    }
+  }
+
+  if ((item.equipment_types || []).some((entry) => normalizeSearch(`${entry.name} ${entry.url_path}`).includes("katk") || normalizeSearch(`${entry.name} ${entry.url_path}`).includes("катк"))) {
+    score += 6;
+  }
+
+  if ((item.work_types || []).some((entry) => {
+    const value = normalizeSearch(`${entry.name} ${entry.url_path}`);
+    return value.includes("uplotn") || value.includes("уплотн") || value.includes("grunt") || value.includes("грунт");
+  })) {
+    score += 4;
+  }
+
+  return score;
+}
+
+async function getArticleEquipmentSection(record: RichPage): Promise<ArticleEquipmentSection | null> {
+  const preset = ARTICLE_EQUIPMENT_PRESETS[record.slug];
+  if (!preset) return null;
+
+  const equipment = await getEquipmentIndex(preset.fetchLimit);
+  const ranked = equipment
+    .map((item) => ({ item, score: scoreEquipmentMatch(item, preset.keywords) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title, "ru-RU"));
+
+  if (!ranked.length) return null;
+
+  const items: EquipmentCardRecord[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of ranked) {
+    if (seen.has(entry.item.slug)) continue;
+    seen.add(entry.item.slug);
+    items.push(entry.item);
+    if (items.length >= preset.limit) break;
+  }
+
+  if (!items.length) return null;
+
+  return {
+    title: preset.title,
+    description: preset.description,
+    items,
+  };
+}
 
 function isCityLandingPath(path: string | null | undefined) {
   if (!path) return false;
@@ -49,7 +141,7 @@ export default async function RootSlugRoute({ params }: Props) {
 
   if (!data) notFound();
 
-  const [cityEquipment, cityCategories, blogCategories] = await Promise.all([
+  const [cityEquipment, cityCategories, blogCategories, articleEquipmentSection] = await Promise.all([
     data.kind === "page" && isCityLandingPath(data.record.url_path)
       ? getEquipmentIndexForCategorySidebar(160)
       : Promise.resolve(null),
@@ -57,6 +149,7 @@ export default async function RootSlugRoute({ params }: Props) {
       ? getEquipmentTypesIndex(120)
       : Promise.resolve(null),
     data.kind === "post" ? getBlogCategories(10) : Promise.resolve(null),
+    data.kind === "post" ? getArticleEquipmentSection(data.record) : Promise.resolve(null),
   ]);
 
   return (
@@ -66,6 +159,7 @@ export default async function RootSlugRoute({ params }: Props) {
       cityEquipment={cityEquipment}
       cityCategories={cityCategories}
       blogCategories={blogCategories}
+      articleEquipmentSection={articleEquipmentSection}
     />
   );
 }

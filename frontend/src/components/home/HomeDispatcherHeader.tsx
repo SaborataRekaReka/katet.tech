@@ -160,6 +160,7 @@ const SERVICE_MEGA_COLUMNS: MegaMenuColumn[] = [
       { label: "Демонтаж бетонного забора", href: "/tipy-rabot/demontazh-betonnogo-zabora/" },
       { label: "Монтаж бетонных заборов", href: "/tipy-rabot/montazh-betonnyh-zaborov/" },
       { label: "Земляные работы", href: "/tipy-rabot/zemlyanye-raboty/" },
+      { label: "Погрузка грунта", href: "/tipy-rabot/pogruzka-grunta/" },
       {
         label: "Разработка котлована",
         href: "/tipy-rabot/razrabotka-kotlovana/",
@@ -222,6 +223,7 @@ const MOBILE_MENU_SECTIONS: MobileMenuSection[] = [
 ];
 
 const MAX_SERVICE_MENU_ENTRIES = 12;
+const ALWAYS_VISIBLE_SERVICE_PATHS = ["/tipy-rabot/pogruzka-grunta/"];
 
 function normalizeMenuHref(href: string) {
   const trimmed = href.trim();
@@ -347,7 +349,7 @@ function buildServiceMegaColumns(workTypes?: WorkTypeNavLink[]) {
 
   if (!preferredPaths.size) return buildFallbackServiceColumns();
 
-  const curatedColumns = filterMegaMenuColumns(SERVICE_MEGA_COLUMNS, preferredPaths);
+  const curatedColumns = filterMegaMenuColumns(SERVICE_MEGA_COLUMNS, preferredPaths, ALWAYS_VISIBLE_SERVICE_PATHS);
   const usedPaths = collectMegaMenuPaths(curatedColumns);
 
   const missingEntries: MegaMenuEntry[] = prioritizedWorkTypes

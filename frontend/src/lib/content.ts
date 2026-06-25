@@ -1158,6 +1158,7 @@ export async function getSitemapPaths() {
   const staticPaths = [
     { url_path: "/arenda_spetstekhniki/", updated_at: null },
     { url_path: "/goroda/", updated_at: null },
+    { url_path: "/tipy-rabot/pogruzka-grunta/", updated_at: null },
     ...(!withCategories
       ? ["/category/buldozery/", "/category/ekskavatory/", "/category/manipulyatory/", "/category/podemniki/", "/category/raznoe/"].map((url_path) => ({
           url_path,

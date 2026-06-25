@@ -1,6 +1,7 @@
 const MANUAL_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
   "vyvoz-grunta": "/assets/katet/services/Вывоз грунта.jpg",
   "vyvoz-stroitelnogo-musora": "/assets/katet/services/Вывоз строительного мусора.jpg",
+  "pogruzka-grunta": "/assets/katet/services/Земляные работы.jpg",
   "demontaj-zdaniy": "/assets/katet/services/Демонтаж зданий.jpg",
   "zemlyanye-raboty": "/assets/katet/services/Земляные работы.jpg",
   "razrabotka-kotlovana": "/assets/katet/services/Разработка котлованов.jpg",

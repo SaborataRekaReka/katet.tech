@@ -15,6 +15,7 @@ const SEO_TITLE = "Погрузка грунта в Москве и МО — э�
 const SEO_DESCRIPTION = "Погрузка грунта экскаватором на самосвалы в Москве и МО. Подберем технику под объем, подъезд и условия площадки. Оставьте заявку на расчет.";
 const HERO_IMAGE_PATH = "/assets/katet/services/Земляные работы.jpg";
 const MAX_EQUIPMENT_ITEMS = 12;
+const MIN_SAMOSVAL_ITEMS = 2;
 
 const SEO_HTML = `
 <p>Погрузка грунта — услуга для объектов, где нужно быстро загрузить землю, песок, суглинок, глину или смешанный грунт в самосвалы, контейнеры либо переместить материал по площадке. Работы выполняются экскаватором, экскаватором-погрузчиком или другой подходящей техникой в зависимости от объема, состояния грунта и условий подъезда.</p>
@@ -162,6 +163,19 @@ function scoreEquipment(item: EquipmentCardRecord) {
   return score;
 }
 
+function itemSearchSource(item: EquipmentCardRecord) {
+  const title = normalizeText(item.title);
+  const excerpt = normalizeText(item.excerpt);
+  const equipmentTypes = (item.equipment_types || []).map((entry) => normalizeText(entry.name)).join(" ");
+  const workTypes = (item.work_types || []).map((entry) => normalizeText(entry.name)).join(" ");
+
+  return `${title} ${excerpt} ${equipmentTypes} ${workTypes}`;
+}
+
+function isSamosvalItem(item: EquipmentCardRecord) {
+  return /самосвал/u.test(itemSearchSource(item));
+}
+
 function pickRelevantEquipment(items: EquipmentCardRecord[]) {
   const ranked = items
     .map((item) => ({ item, score: scoreEquipment(item) }))
@@ -174,7 +188,40 @@ function pickRelevantEquipment(items: EquipmentCardRecord[]) {
     .map((entry) => entry.item);
 
   if (ranked.length) {
-    return ranked.slice(0, MAX_EQUIPMENT_ITEMS);
+    const selected = ranked.slice(0, MAX_EQUIPMENT_ITEMS);
+    const selectedIds = new Set(selected.map((item) => item.id));
+    let samosvalCount = selected.filter((item) => isSamosvalItem(item)).length;
+
+    if (samosvalCount < MIN_SAMOSVAL_ITEMS) {
+      const replaceableIndexes = selected
+        .map((item, index) => ({ item, index }))
+        .filter((entry) => !isSamosvalItem(entry.item))
+        .map((entry) => entry.index)
+        .reverse();
+
+      const samosvalCandidates = items
+        .filter((item) => isSamosvalItem(item))
+        .sort((left, right) => {
+          const scoreDelta = scoreEquipment(right) - scoreEquipment(left);
+          if (scoreDelta !== 0) return scoreDelta;
+          return left.title.localeCompare(right.title, "ru-RU");
+        });
+
+      for (const candidate of samosvalCandidates) {
+        if (samosvalCount >= MIN_SAMOSVAL_ITEMS) break;
+        if (selectedIds.has(candidate.id)) continue;
+
+        const replaceIndex = replaceableIndexes.shift();
+        if (replaceIndex === undefined) break;
+
+        selectedIds.delete(selected[replaceIndex].id);
+        selected[replaceIndex] = candidate;
+        selectedIds.add(candidate.id);
+        samosvalCount += 1;
+      }
+    }
+
+    return selected;
   }
 
   const fallbackByTitle = items.filter((item) => /экскаватор|погрузчик|самосвал|фронтальн/iu.test(item.title));

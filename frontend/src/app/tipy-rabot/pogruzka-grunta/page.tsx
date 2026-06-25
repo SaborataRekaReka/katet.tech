@@ -6,6 +6,8 @@ import { getEquipmentIndex, type EquipmentCardRecord } from "@/lib/content";
 import { metadataFrom } from "@/lib/format";
 
 export const revalidate = 300;
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const PAGE_PATH = "/tipy-rabot/pogruzka-grunta/";
 const PAGE_NAME = "Погрузка грунта";

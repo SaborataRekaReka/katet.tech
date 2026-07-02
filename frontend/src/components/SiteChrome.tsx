@@ -220,25 +220,23 @@ function HeaderDropdown({ title, href, links }: { title: string; href: string; l
 
 export function SiteFooter({ navigation }: { navigation: NavigationData }) {
   const rentHrefByName = new Map(navigation.equipmentTypes.map((item) => [item.name, item.url_path]));
-  const rentLinksByName = FOOTER_RENT_LINKS
-    .map((item) => {
-      const resolvedPath = rentHrefByName.get(item.name);
-      if (!resolvedPath) return null;
-
-      return {
-        ...item,
-        name: formatFooterRentCategoryName(item.name, resolvedPath),
-        url_path: resolvedPath,
-      };
-    })
-    .filter((item): item is NavLink => Boolean(item));
   const serviceLinks = buildServiceLinks(navigation.workTypes);
-  const rentLinks = rentLinksByName.length
-    ? rentLinksByName
-    : navigation.equipmentTypes.map((item) => ({
+  const fallbackRentLinks = FOOTER_RENT_LINKS.map((item) => {
+    const resolvedPath = rentHrefByName.get(item.name) || item.url_path;
+
+    return {
+      ...item,
+      name: formatFooterRentCategoryName(item.name, resolvedPath),
+      url_path: resolvedPath,
+    };
+  });
+  const rentLinks = dedupeNavLinks([
+    ...fallbackRentLinks,
+    ...navigation.equipmentTypes.map((item) => ({
         ...item,
         name: formatFooterRentCategoryName(item.name, item.url_path),
-      }));
+      })),
+  ]);
   const contractDownloadLink = FOOTER_DOWNLOAD_LINKS.find((link) => link.name === "Договор");
   const year = new Date().getFullYear();
 

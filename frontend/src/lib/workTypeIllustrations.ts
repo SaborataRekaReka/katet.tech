@@ -11,7 +11,10 @@ const MANUAL_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
 
 const GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL = "/assets/katet/services/generated";
 const GENERATED_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
+  "demontazh-betonnyh-konstrukcij": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/demontazh-betonnyh-konstrukcij.png`,
   "demontazh-betonnogo-zabora": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/demontazh-betonnogo-zabora.png`,
+  "demontazh-chastnogo-doma": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/demontazh-chastnogo-doma.png`,
+  "demontazh-fundamenta": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/demontazh-fundamenta.png`,
   "gruzoperevozki-po-rossii": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/gruzoperevozki-po-rossii.png`,
   "gruzovoj-trall-dlya-perevozki-traktora": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/gruzovoj-trall-dlya-perevozki-traktora.png`,
   "montazh-betonnykh-zaborov": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/montazh-betonnykh-zaborov.png`,
@@ -25,6 +28,7 @@ const GENERATED_WORK_TYPE_ILLUSTRATIONS_BY_SLUG: Record<string, string> = {
   "perevozka-stankov": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/perevozka-stankov.png`,
   "razrabotka-grunta": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/razrabotka-grunta.png`,
   "razrabotka-transhej": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/razrabotka-transhej.png`,
+  "raschistka-uchastka-spectehnikoy": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/raschistka-uchastka-spectehnikoy.png`,
   "vykopat-kotlovan-pod-fundament": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/vykopat-kotlovan-pod-fundament.png`,
   "vyravnivanie-uchastka": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/vyravnivanie-uchastka.png`,
   "vyvoz-snega": `${GENERATED_WORK_TYPE_ILLUSTRATIONS_DIR_URL}/vyvoz-snega.png`,

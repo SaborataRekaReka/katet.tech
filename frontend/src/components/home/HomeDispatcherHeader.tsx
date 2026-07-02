@@ -8,6 +8,7 @@ import { ActionLink } from "@/components/ui/Button";
 import { ChevronDownIcon, CloseIcon, ListIcon, MailIcon, PhoneIcon, PinIcon, TelegramIcon, WhatsAppIcon } from "@/components/ui/icons";
 import { CITY_DIRECTORY_LINKS, CITY_DIRECTORY_PATH } from "@/lib/cityDirectory";
 import { siteContacts } from "@/lib/site";
+import { ALL_FALLBACK_SERVICE_LINKS } from "@/lib/staticServices";
 import styles from "./HomeDispatcherHero.module.css";
 
 type MegaMenuKey = "rent" | "service" | "city";
@@ -223,7 +224,6 @@ const MOBILE_MENU_SECTIONS: MobileMenuSection[] = [
 ];
 
 const MAX_SERVICE_MENU_ENTRIES = 12;
-const ALWAYS_VISIBLE_SERVICE_PATHS = ["/tipy-rabot/pogruzka-grunta/"];
 
 function normalizeMenuHref(href: string) {
   const trimmed = href.trim();
@@ -233,65 +233,6 @@ function normalizeMenuHref(href: string) {
   if (withLeadingSlash === "/") return withLeadingSlash;
 
   return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
-}
-
-function filterMegaMenuColumns(columns: MegaMenuColumn[], availablePaths: Set<string>, extraAllowedPaths: string[] = []) {
-  const alwaysAllowed = new Set(extraAllowedPaths.map(normalizeMenuHref));
-
-  return columns
-    .map((column) => {
-      const entries = column.entries
-        .map((entry) => {
-          const allowedChildren = (entry.children ?? []).filter((child) => {
-            const normalizedHref = normalizeMenuHref(child.href);
-            return availablePaths.has(normalizedHref) || alwaysAllowed.has(normalizedHref);
-          });
-
-          const normalizedEntryHref = normalizeMenuHref(entry.href);
-          const isEntryAllowed = availablePaths.has(normalizedEntryHref) || alwaysAllowed.has(normalizedEntryHref);
-          const hasAllowedChildren = allowedChildren.length > 0;
-
-          if (!isEntryAllowed && !hasAllowedChildren) return null;
-
-          if (hasAllowedChildren) {
-            return {
-              ...entry,
-              href: isEntryAllowed ? entry.href : allowedChildren[0].href,
-              children: allowedChildren,
-            };
-          }
-
-          return {
-            ...entry,
-            children: undefined,
-          };
-        })
-        .filter((entry): entry is MegaMenuEntry => Boolean(entry));
-
-      if (!entries.length) return null;
-
-      return {
-        ...column,
-        entries,
-      };
-    })
-    .filter((column): column is MegaMenuColumn => Boolean(column));
-}
-
-function collectMegaMenuPaths(columns: MegaMenuColumn[]) {
-  const paths = new Set<string>();
-
-  for (const column of columns) {
-    for (const entry of column.entries) {
-      paths.add(normalizeMenuHref(entry.href));
-
-      for (const child of entry.children || []) {
-        paths.add(normalizeMenuHref(child.href));
-      }
-    }
-  }
-
-  return paths;
 }
 
 function buildColumnsFromEntries(entries: MegaMenuEntry[], title: string, continuationTitles: string[] = []) {
@@ -315,58 +256,30 @@ function buildColumnsFromEntries(entries: MegaMenuEntry[], title: string, contin
   return columns;
 }
 
-function buildFallbackServiceColumns() {
-  const fallbackEntries = SERVICE_MEGA_COLUMNS
-    .flatMap((column) => column.entries)
-    .filter((entry) => normalizeMenuHref(entry.href) !== "/tipy-rabot/")
-    .slice(0, MAX_SERVICE_MENU_ENTRIES)
-    .map((entry) => ({ ...entry, children: undefined }));
-
-  return buildColumnsFromEntries(fallbackEntries, "Популярные услуги", ["Еще услуги", "Другие услуги"]);
-}
-
 function buildServiceMegaColumns(workTypes?: WorkTypeNavLink[]) {
-  const uniqueByPath = new Map<string, WorkTypeNavLink>();
+  const fallbackPaths = new Set(ALL_FALLBACK_SERVICE_LINKS.map((item) => normalizeMenuHref(item.url_path)));
+  const uniqueExtrasByPath = new Map<string, WorkTypeNavLink>();
 
   for (const item of workTypes || []) {
     const normalizedPath = normalizeMenuHref(item.url_path);
-    if (normalizedPath === "/tipy-rabot/" || !normalizedPath.startsWith("/tipy-rabot/")) continue;
-    if (uniqueByPath.has(normalizedPath)) continue;
-    uniqueByPath.set(normalizedPath, { ...item, url_path: normalizedPath });
+    if (normalizedPath === "/tipy-rabot/" || fallbackPaths.has(normalizedPath)) continue;
+    if (uniqueExtrasByPath.has(normalizedPath)) continue;
+    uniqueExtrasByPath.set(normalizedPath, { ...item, url_path: normalizedPath });
   }
 
-  if (!uniqueByPath.size) return buildFallbackServiceColumns();
-
-  const rankedWorkTypes = Array.from(uniqueByPath.values()).sort((left, right) => {
+  const extraWorkTypes = Array.from(uniqueExtrasByPath.values()).sort((left, right) => {
     const countDelta = (right.item_count || 0) - (left.item_count || 0);
     if (countDelta !== 0) return countDelta;
 
     return left.name.localeCompare(right.name, "ru-RU");
-  });
+  }).slice(0, MAX_SERVICE_MENU_ENTRIES);
 
-  const prioritizedWorkTypes = rankedWorkTypes.slice(0, MAX_SERVICE_MENU_ENTRIES);
-  const preferredPaths = new Set(prioritizedWorkTypes.map((item) => item.url_path));
+  const entries: MegaMenuEntry[] = [
+    ...ALL_FALLBACK_SERVICE_LINKS.map((item) => ({ label: item.name, href: item.url_path })),
+    ...extraWorkTypes.map((item) => ({ label: item.name, href: item.url_path })),
+  ];
 
-  if (!preferredPaths.size) return buildFallbackServiceColumns();
-
-  const curatedColumns = filterMegaMenuColumns(SERVICE_MEGA_COLUMNS, preferredPaths, ALWAYS_VISIBLE_SERVICE_PATHS);
-  const usedPaths = collectMegaMenuPaths(curatedColumns);
-
-  const missingEntries: MegaMenuEntry[] = prioritizedWorkTypes
-    .filter((item) => !usedPaths.has(item.url_path))
-    .map((item) => ({ label: item.name, href: item.url_path }));
-
-  if (!curatedColumns.length) {
-    const dynamicColumns = buildColumnsFromEntries(
-      prioritizedWorkTypes.map((item) => ({ label: item.name, href: item.url_path })),
-      "Популярные услуги",
-      ["Еще услуги", "Другие услуги"],
-    );
-
-    return dynamicColumns.length ? dynamicColumns : buildFallbackServiceColumns();
-  }
-
-  return [...curatedColumns, ...buildColumnsFromEntries(missingEntries, "Еще услуги", ["Другие услуги"])];
+  return buildColumnsFromEntries(entries, "Популярные услуги", ["Еще услуги", "Другие услуги"]);
 }
 
 function normalizeCityName(value: string) {

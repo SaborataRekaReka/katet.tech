@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { NavLink } from "@/lib/content";
 import { CITY_DIRECTORY_LINKS, CITY_DIRECTORY_PATH } from "@/lib/cityDirectory";
 import { siteContacts } from "@/lib/site";
-import { STATIC_SERVICE_LINKS } from "@/lib/staticServices";
+import { LEGACY_SERVICE_LINKS, STATIC_SERVICE_LINKS } from "@/lib/staticServices";
 import { ActionLink } from "@/components/ui/Button";
 import { ContactLink } from "@/components/ui/ContactLinks";
 import { Input } from "@/components/ui/Input";
@@ -45,22 +45,7 @@ const FOOTER_DOWNLOAD_LINKS: DownloadNavLink[] = [
   },
 ];
 
-const FOOTER_SERVICE_LINKS: NavLink[] = [
-  { name: "Вывоз строительного мусора", url_path: "/tipy-rabot/vyvoz-stroitelnogo-musora/" },
-  { name: "Вывоз грунта", url_path: "/tipy-rabot/vyvoz-grunta/" },
-  { name: "Вывоз снега", url_path: "/tipy-rabot/vyvoz-snega/" },
-  { name: "Демонтаж зданий", url_path: "/tipy-rabot/demontaj-zdaniy/" },
-  { name: "Демонтаж бетонного забора", url_path: "/tipy-rabot/demontazh-betonnogo-zabora/" },
-  { name: "Монтаж бетонных заборов", url_path: "/tipy-rabot/montazh-betonnyh-zaborov/" },
-  { name: "Разработка траншей", url_path: "/tipy-rabot/razrabotka-transhej/" },
-  { name: "Разработка карьера", url_path: "/tipy-rabot/razrabotka-karera/" },
-  { name: "Перевозка спецтехники", url_path: "/tipy-rabot/perevozka-spectehniki/" },
-  { name: "Грузоперевозки по России", url_path: "/tipy-rabot/gruzoperevozki-po-rossii/" },
-  { name: "Перевозка нерудных материалов", url_path: "/tipy-rabot/perevozka-nerudnyh-materialov/" },
-  { name: "Земляные работы", url_path: "/tipy-rabot/zemlyanye-raboty/" },
-  { name: "Разработка котлована", url_path: "/tipy-rabot/razrabotka-kotlovana/" },
-  { name: "Выкопать котлован для фундамента", url_path: "/tipy-rabot/vykopat-kotlovan-dlya-fundamenta/" },
-];
+const FOOTER_SERVICE_LINKS: NavLink[] = [...LEGACY_SERVICE_LINKS];
 
 const FOOTER_RENT_LINKS: NavLink[] = [
   { name: "Аренда автовышки", url_path: "/arenda/arenda-avtovishek-v-moskve/" },
@@ -143,7 +128,7 @@ function buildServiceLinks(workTypes: NavLink[]) {
     url_path: workHrefByName.get(item.name) || item.url_path,
   }));
 
-  return dedupeNavLinks([...STATIC_SERVICE_LINKS, ...prioritized, ...workTypes]);
+  return dedupeNavLinks([...prioritized, ...workTypes, ...STATIC_SERVICE_LINKS]);
 }
 
 export function SiteHeader({ navigation }: { navigation: NavigationData }) {

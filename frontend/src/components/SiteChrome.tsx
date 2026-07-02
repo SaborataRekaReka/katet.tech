@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { NavLink } from "@/lib/content";
 import { CITY_DIRECTORY_LINKS, CITY_DIRECTORY_PATH } from "@/lib/cityDirectory";
 import { siteContacts } from "@/lib/site";
+import { STATIC_SERVICE_LINKS } from "@/lib/staticServices";
 import { ActionLink } from "@/components/ui/Button";
 import { ContactLink } from "@/components/ui/ContactLinks";
 import { Input } from "@/components/ui/Input";
@@ -124,9 +125,30 @@ function formatFooterRentCategoryName(label: string, path: string | null | undef
   return compact.charAt(0).toUpperCase() + compact.slice(1);
 }
 
+function dedupeNavLinks(links: NavLink[]) {
+  const seen = new Set<string>();
+
+  return links.filter((link) => {
+    const key = `${link.url_path}::${link.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildServiceLinks(workTypes: NavLink[]) {
+  const workHrefByName = new Map(workTypes.map((item) => [item.name, item.url_path]));
+  const prioritized = FOOTER_SERVICE_LINKS.map((item) => ({
+    ...item,
+    url_path: workHrefByName.get(item.name) || item.url_path,
+  }));
+
+  return dedupeNavLinks([...STATIC_SERVICE_LINKS, ...prioritized, ...workTypes]);
+}
+
 export function SiteHeader({ navigation }: { navigation: NavigationData }) {
   const rentLinks = navigation.equipmentTypes.length ? navigation.equipmentTypes : FOOTER_RENT_LINKS.slice(0, 12);
-  const serviceLinks = navigation.workTypes.length ? navigation.workTypes : FOOTER_SERVICE_LINKS.slice(0, 10);
+  const serviceLinks = buildServiceLinks(navigation.workTypes);
 
   return (
     <header className="katet-masthead">
@@ -212,16 +234,7 @@ function HeaderDropdown({ title, href, links }: { title: string; href: string; l
 }
 
 export function SiteFooter({ navigation }: { navigation: NavigationData }) {
-  const workHrefByName = new Map(navigation.workTypes.map((item) => [item.name, item.url_path]));
   const rentHrefByName = new Map(navigation.equipmentTypes.map((item) => [item.name, item.url_path]));
-  const serviceLinksByName = FOOTER_SERVICE_LINKS
-    .map((item) => {
-      const resolvedPath = workHrefByName.get(item.name);
-      if (!resolvedPath) return null;
-
-      return { ...item, url_path: resolvedPath };
-    })
-    .filter((item): item is NavLink => Boolean(item));
   const rentLinksByName = FOOTER_RENT_LINKS
     .map((item) => {
       const resolvedPath = rentHrefByName.get(item.name);
@@ -234,11 +247,7 @@ export function SiteFooter({ navigation }: { navigation: NavigationData }) {
       };
     })
     .filter((item): item is NavLink => Boolean(item));
-  const prioritizedServicePaths = new Set(serviceLinksByName.map((item) => item.url_path));
-  const serviceLinks = [
-    ...serviceLinksByName,
-    ...navigation.workTypes.filter((item) => !prioritizedServicePaths.has(item.url_path)),
-  ];
+  const serviceLinks = buildServiceLinks(navigation.workTypes);
   const rentLinks = rentLinksByName.length
     ? rentLinksByName
     : navigation.equipmentTypes.map((item) => ({

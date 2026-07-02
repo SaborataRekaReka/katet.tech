@@ -4,6 +4,7 @@ import { cache } from "react";
 import { query } from "./db";
 import type { ImageFile } from "./format";
 import { directusUrl, ensureTrailingSlash } from "./format";
+import { STATIC_SERVICE_LINKS } from "./staticServices";
 
 export type NavLink = {
   name: string;
@@ -1159,6 +1160,7 @@ export async function getSitemapPaths() {
     { url_path: "/arenda_spetstekhniki/", updated_at: null },
     { url_path: "/goroda/", updated_at: null },
     { url_path: "/tipy-rabot/pogruzka-grunta/", updated_at: null },
+    ...STATIC_SERVICE_LINKS.map((item) => ({ url_path: item.url_path, updated_at: null })),
     ...(!withCategories
       ? ["/category/buldozery/", "/category/ekskavatory/", "/category/manipulyatory/", "/category/podemniki/", "/category/raznoe/"].map((url_path) => ({
           url_path,

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { NavLink } from "@/lib/content";
+import { seoBatchIllustrationByUrlPath } from "@/lib/seoBatch20260811";
 import {
   workTypeIllustrationByUrlPath,
 } from "@/lib/workTypeIllustrations";
@@ -8,7 +9,7 @@ import { HeroLead } from "@/components/marketing/HeroLead";
 import { Section } from "@/components/layout/Section";
 
 function resolveWorkTypeIllustration(link: NavLink) {
-  return workTypeIllustrationByUrlPath(link.url_path);
+  return seoBatchIllustrationByUrlPath(link.url_path) || workTypeIllustrationByUrlPath(link.url_path);
 }
 
 export function DirectoryPage({

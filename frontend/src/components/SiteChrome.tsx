@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { NavLink } from "@/lib/content";
 import { CITY_DIRECTORY_LINKS, CITY_DIRECTORY_PATH } from "@/lib/cityDirectory";
+import { SEO_BATCH_SERVICE_LINKS } from "@/lib/seoBatch20260811";
 import { siteContacts } from "@/lib/site";
 import { LEGACY_SERVICE_LINKS, STATIC_SERVICE_LINKS } from "@/lib/staticServices";
 import { ActionLink } from "@/components/ui/Button";
@@ -45,7 +46,7 @@ const FOOTER_DOWNLOAD_LINKS: DownloadNavLink[] = [
   },
 ];
 
-const FOOTER_SERVICE_LINKS: NavLink[] = [...LEGACY_SERVICE_LINKS];
+const FOOTER_SERVICE_LINKS: NavLink[] = [...SEO_BATCH_SERVICE_LINKS, ...LEGACY_SERVICE_LINKS];
 
 const FOOTER_RENT_LINKS: NavLink[] = [
   { name: "Аренда автовышки", url_path: "/arenda/arenda-avtovishek-v-moskve/" },
@@ -128,7 +129,7 @@ function buildServiceLinks(workTypes: NavLink[]) {
     url_path: workHrefByName.get(item.name) || item.url_path,
   }));
 
-  return dedupeNavLinks([...prioritized, ...workTypes, ...STATIC_SERVICE_LINKS]);
+  return dedupeNavLinks([...prioritized, ...workTypes, ...STATIC_SERVICE_LINKS, ...SEO_BATCH_SERVICE_LINKS]);
 }
 
 export function SiteHeader({ navigation }: { navigation: NavigationData }) {

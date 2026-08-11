@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { ActionLink } from "@/components/ui/Button";
 import { ChevronDownIcon, CloseIcon, ListIcon, MailIcon, PhoneIcon, PinIcon, TelegramIcon, WhatsAppIcon } from "@/components/ui/icons";
 import { CITY_DIRECTORY_LINKS, CITY_DIRECTORY_PATH } from "@/lib/cityDirectory";
+import { SEO_BATCH_SERVICE_LINKS } from "@/lib/seoBatch20260811";
 import { siteContacts } from "@/lib/site";
 import { ALL_FALLBACK_SERVICE_LINKS } from "@/lib/staticServices";
 import styles from "./HomeDispatcherHero.module.css";
@@ -257,7 +258,8 @@ function buildColumnsFromEntries(entries: MegaMenuEntry[], title: string, contin
 }
 
 function buildServiceMegaColumns(workTypes?: WorkTypeNavLink[]) {
-  const fallbackPaths = new Set(ALL_FALLBACK_SERVICE_LINKS.map((item) => normalizeMenuHref(item.url_path)));
+  const fallbackServiceLinks = [...SEO_BATCH_SERVICE_LINKS, ...ALL_FALLBACK_SERVICE_LINKS];
+  const fallbackPaths = new Set(fallbackServiceLinks.map((item) => normalizeMenuHref(item.url_path)));
   const uniqueExtrasByPath = new Map<string, WorkTypeNavLink>();
 
   for (const item of workTypes || []) {
@@ -275,7 +277,7 @@ function buildServiceMegaColumns(workTypes?: WorkTypeNavLink[]) {
   }).slice(0, MAX_SERVICE_MENU_ENTRIES);
 
   const entries: MegaMenuEntry[] = [
-    ...ALL_FALLBACK_SERVICE_LINKS.map((item) => ({ label: item.name, href: item.url_path })),
+    ...fallbackServiceLinks.map((item) => ({ label: item.name, href: item.url_path })),
     ...extraWorkTypes.map((item) => ({ label: item.name, href: item.url_path })),
   ];
 

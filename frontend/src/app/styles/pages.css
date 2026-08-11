@@ -4298,8 +4298,27 @@
 }
 
 .content img {
+  display: block;
+  max-width: 100%;
   height: auto;
   border-radius: 8px;
+}
+
+.seo-enhanced__body figure {
+  margin: 32px 0;
+}
+
+.seo-enhanced__body figure img {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  background: #f8f7ff;
+}
+
+.seo-enhanced__body figure figcaption {
+  margin-top: 8px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .section--seo-enhanced {
@@ -4656,4 +4675,3 @@
     width: 100%;
   }
 }
-

@@ -1,0 +1,11 @@
+topic,page_type,primary_query,frequency,intent,business_value,content_gap,cannibalization_risk,data_quality,score,selected,rejection_reason
+Уплотнение грунта,service_landing,уплотнение грунта,3271 broad / 31 fixed,commercial,high,high,low,verified_wordstat_and_serp,90,yes,
+Корчевание пней,service_landing,корчевание пней,1675 broad / 64 fixed,commercial,high,high,low,verified_wordstat_and_serp,89,yes,
+Укладка дорожных плит,service_landing,укладка дорожных плит,526 broad / 49 fixed,commercial,high,high,low,verified_wordstat_and_serp,89,yes,
+Демонтаж металлоконструкций,service_landing,демонтаж металлоконструкций,384 broad / 57 fixed,commercial,high,high,low,verified_wordstat_and_serp,88,yes,
+Обратная засыпка грунта,service_landing,обратная засыпка грунта,499 broad / 35 core fixed,commercial,high,high,low,verified_wordstat_and_serp,87,yes,
+Демонтаж асфальта,service_landing,демонтаж асфальта,219 broad / 18 fixed,commercial,high,high,low,verified_wordstat_and_serp,86,yes,
+Вывоз бетонного боя,service_landing,вывоз бетонного боя,102 broad / 14 fixed,commercial,medium,medium,medium,verified_wordstat,74,no,пересечение с вывозом строительного мусора
+Устройство временной дороги,service_landing,устройство временной дороги,171 broad / 1 phrase,commercial,high,medium,low,verified_wordstat,73,no,слишком низкая фразовая частотность
+Демонтаж гаража,service_landing,демонтаж гаража,156 broad / 9 phrase,commercial,medium,medium,medium,verified_wordstat,69,no,пересечение с действующими страницами демонтажа
+Снятие плодородного слоя,service_landing,снятие плодородного слоя,150 broad / 2 fixed,commercial,medium,medium,low,verified_wordstat,68,no,низкая точная частотность

@@ -18,6 +18,16 @@ export const PRIVATE_HOUSE_DEMOLITION_SERVICE = {
   url_path: "/demontazh-chastnogo-doma/",
 } as const;
 
+export const SITE_FILLING_SERVICE = {
+  name: "Отсыпка участка",
+  url_path: "/otsypka-uchastka/",
+} as const;
+
+export const CONSTRUCTION_SITE_PREPARATION_SERVICE = {
+  name: "Подготовка участка под строительство",
+  url_path: "/podgotovka-uchastka-pod-stroitelstvo/",
+} as const;
+
 export const LEGACY_SERVICE_LINKS = [
   { name: "Вывоз строительного мусора", url_path: "/tipy-rabot/vyvoz-stroitelnogo-musora/" },
   { name: "Вывоз грунта", url_path: "/tipy-rabot/vyvoz-grunta/" },
@@ -40,6 +50,8 @@ export const STATIC_SERVICE_LINKS = [
   CONCRETE_DEMOLITION_SERVICE,
   SITE_CLEARING_SERVICE,
   PRIVATE_HOUSE_DEMOLITION_SERVICE,
+  SITE_FILLING_SERVICE,
+  CONSTRUCTION_SITE_PREPARATION_SERVICE,
 ];
 
 export const ALL_FALLBACK_SERVICE_LINKS = [...LEGACY_SERVICE_LINKS, ...STATIC_SERVICE_LINKS];

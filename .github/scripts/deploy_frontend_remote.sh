@@ -43,6 +43,8 @@ apply_frontend_env_overrides() {
   local value
   local -a keys=(
     NEXT_PUBLIC_SITE_URL
+    CRM_SITE_INGEST_URL
+    CRM_SITE_SECRET
     YANDEX_WEBMASTER_HOST_URL
     YANDEX_WEBMASTER_FEED_URL
     YANDEX_WEBMASTER_FEED_TYPE

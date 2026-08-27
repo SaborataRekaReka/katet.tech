@@ -311,7 +311,9 @@ jobs:
                DEPLOY_APP_DIR='${DEPLOY_APP_DIR}' \
                DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
                DEPLOY_LABEL='${{ github.sha }}' \
-               FRONTEND_ENV_LOCAL_B64='${FRONTEND_ENV_LOCAL_B64_RUNTIME}' \
+              FRONTEND_ENV_LOCAL_B64='${FRONTEND_ENV_LOCAL_B64_RUNTIME}' \
+              CRM_SITE_INGEST_URL='https://crm.katet.tech/api/v1/integrations/events/ingest' \
+              CRM_SITE_SECRET='${{ secrets.CRM_SITE_SECRET }}' \
               NEXT_PUBLIC_SITE_URL='${{ secrets.NEXT_PUBLIC_SITE_URL }}' \
               YANDEX_WEBMASTER_HOST_URL='${{ secrets.YANDEX_WEBMASTER_HOST_URL }}' \
               YANDEX_WEBMASTER_FEED_URL='${{ secrets.YANDEX_WEBMASTER_FEED_URL }}' \
@@ -336,6 +338,8 @@ jobs:
                DEPLOY_SERVICE_NAME='${DEPLOY_SERVICE_NAME}' \
                DEPLOY_LABEL='${{ github.sha }}' \
                FRONTEND_ENV_LOCAL_B64='${FRONTEND_ENV_LOCAL_B64_RUNTIME}' \
+                CRM_SITE_INGEST_URL='https://crm.katet.tech/api/v1/integrations/events/ingest' \
+                CRM_SITE_SECRET='${{ secrets.CRM_SITE_SECRET }}' \
                 NEXT_PUBLIC_SITE_URL='${{ secrets.NEXT_PUBLIC_SITE_URL }}' \
                 YANDEX_WEBMASTER_HOST_URL='${{ secrets.YANDEX_WEBMASTER_HOST_URL }}' \
                 YANDEX_WEBMASTER_FEED_URL='${{ secrets.YANDEX_WEBMASTER_FEED_URL }}' \

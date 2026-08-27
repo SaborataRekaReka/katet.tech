@@ -83,7 +83,8 @@ export function LegacyExternalScripts() {
       if (typeof window.ym !== "function" || !YANDEX_COUNTER_IDS.length) return;
 
       for (const counterId of YANDEX_COUNTER_IDS) {
-        window.ym(String(counterId), "init", {
+        const numericCounterId = Number(counterId);
+        window.ym(Number.isFinite(numericCounterId) ? numericCounterId : counterId, "init", {
           clickmap: true,
           trackLinks: true,
           referrer: document.referrer,
@@ -157,7 +158,8 @@ export function LegacyExternalScripts() {
       if (!submitControl) return;
 
       for (const counterId of YANDEX_COUNTER_IDS) {
-        window.ym(String(counterId), "reachGoal", "formSend");
+        const numericCounterId = Number(counterId);
+        window.ym(Number.isFinite(numericCounterId) ? numericCounterId : counterId, "reachGoal", "formSend");
       }
     };
 
@@ -189,5 +191,5 @@ export function LegacyExternalScripts() {
     };
   }, []);
 
-  return null;
+  return <span aria-hidden="true" data-analytics-runtime="" />;
 }

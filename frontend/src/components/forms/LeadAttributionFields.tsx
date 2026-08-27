@@ -91,8 +91,7 @@ function createSubmissionId() {
 }
 
 export function LeadAttributionFields() {
-  const rootRef = useRef<HTMLSpanElement>(null);
-  const submissionIdRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLInputElement>(null);
   const [values, setValues] = useState({
     submissionId: "",
     metrikaClientId: "",
@@ -106,17 +105,18 @@ export function LeadAttributionFields() {
   useEffect(() => {
     const firstTouch = loadFirstTouch();
     const fallbackClientId = readCookie("_ym_uid");
-    const initializeTimer = window.setTimeout(() => {
-      setValues({
-        submissionId: createSubmissionId(),
-        metrikaClientId: fallbackClientId,
-        yclid: firstTouch.yclid,
-        utmJson: JSON.stringify(firstTouch.utm),
-        firstLandingPage: firstTouch.firstLandingPage,
-        referrer: firstTouch.referrer,
-        capturedAt: firstTouch.capturedAt,
-      });
-    }, 0);
+    // Browser attribution is only available after hydration; keep it in React state
+    // so subsequent parent renders cannot reset the hidden input values.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValues({
+      submissionId: createSubmissionId(),
+      metrikaClientId: fallbackClientId,
+      yclid: firstTouch.yclid,
+      utmJson: JSON.stringify(firstTouch.utm),
+      firstLandingPage: firstTouch.firstLandingPage,
+      referrer: firstTouch.referrer,
+      capturedAt: firstTouch.capturedAt,
+    });
 
     let attempts = 0;
     const requestMetrikaClientId = () => {
@@ -143,28 +143,27 @@ export function LeadAttributionFields() {
 
     const form = rootRef.current?.closest("form");
     const handleSubmit = () => {
-      if (submissionIdRef.current && !submissionIdRef.current.value) {
-        submissionIdRef.current.value = createSubmissionId();
+      if (rootRef.current && !rootRef.current.value) {
+        rootRef.current.value = createSubmissionId();
       }
     };
     form?.addEventListener("submit", handleSubmit);
 
     return () => {
-      window.clearTimeout(initializeTimer);
       if (timer) clearInterval(timer);
       form?.removeEventListener("submit", handleSubmit);
     };
   }, []);
 
   return (
-    <span ref={rootRef} hidden>
-      <input ref={submissionIdRef} name="attribution_submission_id" type="hidden" value={values.submissionId} readOnly />
-      <input name="attribution_metrika_client_id" type="hidden" value={values.metrikaClientId} readOnly />
-      <input name="attribution_yclid" type="hidden" value={values.yclid} readOnly />
-      <input name="attribution_utm_json" type="hidden" value={values.utmJson} readOnly />
-      <input name="attribution_first_landing_page" type="hidden" value={values.firstLandingPage} readOnly />
-      <input name="attribution_referrer" type="hidden" value={values.referrer} readOnly />
-      <input name="attribution_captured_at" type="hidden" value={values.capturedAt} readOnly />
-    </span>
+    <>
+      <input ref={rootRef} name="attribution_submission_id" type="text" value={values.submissionId} readOnly hidden />
+      <input name="attribution_metrika_client_id" type="text" value={values.metrikaClientId} readOnly hidden />
+      <input name="attribution_yclid" type="text" value={values.yclid} readOnly hidden />
+      <input name="attribution_utm_json" type="text" value={values.utmJson} readOnly hidden />
+      <input name="attribution_first_landing_page" type="text" value={values.firstLandingPage} readOnly hidden />
+      <input name="attribution_referrer" type="text" value={values.referrer} readOnly hidden />
+      <input name="attribution_captured_at" type="text" value={values.capturedAt} readOnly hidden />
+    </>
   );
 }

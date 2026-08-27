@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type StoredAttribution = {
   firstLandingPage: string;
@@ -18,13 +18,17 @@ const YANDEX_COUNTER_IDS = (process.env.NEXT_PUBLIC_YANDEX_COUNTER_IDS || "89111
   .filter(Boolean);
 
 function readCookie(name: string) {
-  const prefix = `${encodeURIComponent(name)}=`;
-  const cookie = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(prefix));
+  try {
+    const prefix = `${encodeURIComponent(name)}=`;
+    const cookie = document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix));
 
-  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : "";
+    return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : "";
+  } catch {
+    return "";
+  }
 }
 
 function currentAttribution(): StoredAttribution {
@@ -89,23 +93,30 @@ function createSubmissionId() {
 export function LeadAttributionFields() {
   const rootRef = useRef<HTMLSpanElement>(null);
   const submissionIdRef = useRef<HTMLInputElement>(null);
-  const metrikaClientIdRef = useRef<HTMLInputElement>(null);
-  const yclidRef = useRef<HTMLInputElement>(null);
-  const utmRef = useRef<HTMLInputElement>(null);
-  const firstLandingPageRef = useRef<HTMLInputElement>(null);
-  const referrerRef = useRef<HTMLInputElement>(null);
-  const capturedAtRef = useRef<HTMLInputElement>(null);
+  const [values, setValues] = useState({
+    submissionId: "",
+    metrikaClientId: "",
+    yclid: "",
+    utmJson: "",
+    firstLandingPage: "",
+    referrer: "",
+    capturedAt: "",
+  });
 
   useEffect(() => {
     const firstTouch = loadFirstTouch();
     const fallbackClientId = readCookie("_ym_uid");
-
-    if (metrikaClientIdRef.current) metrikaClientIdRef.current.value = fallbackClientId;
-    if (yclidRef.current) yclidRef.current.value = firstTouch.yclid;
-    if (utmRef.current) utmRef.current.value = JSON.stringify(firstTouch.utm);
-    if (firstLandingPageRef.current) firstLandingPageRef.current.value = firstTouch.firstLandingPage;
-    if (referrerRef.current) referrerRef.current.value = firstTouch.referrer;
-    if (capturedAtRef.current) capturedAtRef.current.value = firstTouch.capturedAt;
+    const initializeTimer = window.setTimeout(() => {
+      setValues({
+        submissionId: createSubmissionId(),
+        metrikaClientId: fallbackClientId,
+        yclid: firstTouch.yclid,
+        utmJson: JSON.stringify(firstTouch.utm),
+        firstLandingPage: firstTouch.firstLandingPage,
+        referrer: firstTouch.referrer,
+        capturedAt: firstTouch.capturedAt,
+      });
+    }, 0);
 
     let attempts = 0;
     const requestMetrikaClientId = () => {
@@ -113,9 +124,10 @@ export function LeadAttributionFields() {
       if (typeof window.ym !== "function") return attempts >= 20;
 
       for (const counterId of YANDEX_COUNTER_IDS) {
-        window.ym(String(counterId), "getClientID", (clientId: unknown) => {
-          if (metrikaClientIdRef.current && typeof clientId === "string" && clientId.trim()) {
-            metrikaClientIdRef.current.value = clientId.trim();
+        const numericCounterId = Number(counterId);
+        window.ym(Number.isFinite(numericCounterId) ? numericCounterId : counterId, "getClientID", (clientId: unknown) => {
+          if (typeof clientId === "string" && clientId.trim()) {
+            setValues((current) => ({ ...current, metrikaClientId: clientId.trim() }));
           }
         });
       }
@@ -138,6 +150,7 @@ export function LeadAttributionFields() {
     form?.addEventListener("submit", handleSubmit);
 
     return () => {
+      window.clearTimeout(initializeTimer);
       if (timer) clearInterval(timer);
       form?.removeEventListener("submit", handleSubmit);
     };
@@ -145,13 +158,13 @@ export function LeadAttributionFields() {
 
   return (
     <span ref={rootRef} hidden>
-      <input ref={submissionIdRef} name="attribution_submission_id" type="hidden" />
-      <input ref={metrikaClientIdRef} name="attribution_metrika_client_id" type="hidden" />
-      <input ref={yclidRef} name="attribution_yclid" type="hidden" />
-      <input ref={utmRef} name="attribution_utm_json" type="hidden" />
-      <input ref={firstLandingPageRef} name="attribution_first_landing_page" type="hidden" />
-      <input ref={referrerRef} name="attribution_referrer" type="hidden" />
-      <input ref={capturedAtRef} name="attribution_captured_at" type="hidden" />
+      <input ref={submissionIdRef} name="attribution_submission_id" type="hidden" value={values.submissionId} readOnly />
+      <input name="attribution_metrika_client_id" type="hidden" value={values.metrikaClientId} readOnly />
+      <input name="attribution_yclid" type="hidden" value={values.yclid} readOnly />
+      <input name="attribution_utm_json" type="hidden" value={values.utmJson} readOnly />
+      <input name="attribution_first_landing_page" type="hidden" value={values.firstLandingPage} readOnly />
+      <input name="attribution_referrer" type="hidden" value={values.referrer} readOnly />
+      <input name="attribution_captured_at" type="hidden" value={values.capturedAt} readOnly />
     </span>
   );
 }

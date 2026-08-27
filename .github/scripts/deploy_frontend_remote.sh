@@ -390,5 +390,8 @@ fi
 systemctl is-active "${RESOLVED_SERVICE_NAME}"
 echo "[deploy] Service restarted: ${RESOLVED_SERVICE_NAME}"
 
+echo "[deploy] Verifying CRM integration signature"
+node --env-file=.env.local scripts/verify-crm-integration.mjs
+
 rm -f "${DEPLOY_ARCHIVE_PATH}"
 echo "[deploy] Done"

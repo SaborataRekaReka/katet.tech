@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
 
@@ -36,6 +36,17 @@ type LeadFields = {
   sourcePath: string | null;
   referer: string | null;
   payload: Record<string, string>;
+  attribution: LeadAttribution;
+};
+
+type LeadAttribution = {
+  submissionId: string;
+  metrikaClientId?: string;
+  yclid?: string;
+  utm?: Record<string, string>;
+  firstLandingPage?: string;
+  referrer?: string;
+  capturedAt?: string;
 };
 
 function stableSerialize(value: unknown): string {
@@ -87,6 +98,47 @@ function mapFormPayload(formData: FormData) {
   return payload;
 }
 
+function limitedText(value: string, maxLength: number) {
+  return value.trim().slice(0, maxLength);
+}
+
+function parseUtm(value: string) {
+  const utm: Record<string, string> = {};
+  if (!value) return utm;
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return utm;
+
+    for (const [key, item] of Object.entries(parsed)) {
+      const normalizedKey = key.trim().toLowerCase();
+      if (!normalizedKey.startsWith("utm_") || typeof item !== "string") continue;
+      const normalizedValue = limitedText(item, 500);
+      if (normalizedValue) utm[normalizedKey.slice(0, 100)] = normalizedValue;
+    }
+  } catch {
+    return utm;
+  }
+
+  return utm;
+}
+
+function normalizeAttribution(formData: FormData): LeadAttribution {
+  const capturedAtRaw = textField(formData, "attribution_captured_at");
+  const capturedAtMs = Date.parse(capturedAtRaw);
+  const utm = parseUtm(textField(formData, "attribution_utm_json"));
+
+  return {
+    submissionId: limitedText(textField(formData, "attribution_submission_id") || randomUUID(), 200),
+    metrikaClientId: limitedText(textField(formData, "attribution_metrika_client_id"), 255) || undefined,
+    yclid: limitedText(textField(formData, "attribution_yclid"), 255) || undefined,
+    utm: Object.keys(utm).length > 0 ? utm : undefined,
+    firstLandingPage: limitedText(textField(formData, "attribution_first_landing_page"), 2000) || undefined,
+    referrer: limitedText(textField(formData, "attribution_referrer"), 2000) || undefined,
+    capturedAt: Number.isFinite(capturedAtMs) ? new Date(capturedAtMs).toISOString() : undefined,
+  };
+}
+
 function normalizeLeadFields(formData: FormData, referer: string | null): LeadFields {
   const payload = mapFormPayload(formData);
   const phone = textField(formData, "phone", "tel", "contact_phone");
@@ -115,19 +167,12 @@ function normalizeLeadFields(formData: FormData, referer: string | null): LeadFi
     sourcePath,
     referer,
     payload,
+    attribution: normalizeAttribution(formData),
   };
 }
 
 function buildCrmExternalId(fields: LeadFields) {
-  const hashSource = JSON.stringify({
-    phone: fields.phone,
-    formName: fields.formName,
-    sourcePath: fields.sourcePath,
-    message: fields.message,
-    timestampBucket: Math.floor(Date.now() / 1000),
-  });
-  const digest = createHash("sha256").update(hashSource).digest("hex").slice(0, 16);
-  return `${CRM_SITE_EXTERNAL_ID_PREFIX}:${digest}`;
+  return `${CRM_SITE_EXTERNAL_ID_PREFIX}:${fields.attribution.submissionId}`.slice(0, 255);
 }
 
 function buildCrmPayload(fields: LeadFields) {
@@ -148,6 +193,7 @@ function buildCrmPayload(fields: LeadFields) {
     sourcePath: fields.sourcePath || undefined,
     sourceUrl: fields.referer || undefined,
     sourceSystem: "katet.tech",
+    attribution: fields.attribution,
     fields: fields.payload,
   };
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { LeadAttributionFields } from "@/components/forms/LeadAttributionFields";
 import { Button, type ButtonVariant } from "@/components/ui/Button";
 import { MessengerContactLinks } from "@/components/ui/ContactLinks";
 import { Input } from "@/components/ui/Input";
@@ -94,6 +95,7 @@ export function LeadCaptureForm({
 
   return (
     <form id={id} className={formClassName} action="/api/leads/" method="post">
+      <LeadAttributionFields />
       {title ? titleLevel === "h3" ? <h3>{title}</h3> : <h2>{title}</h2> : null}
       <input name="form_name" type="hidden" value={formName} />
       {hiddenFields.map((field) => (

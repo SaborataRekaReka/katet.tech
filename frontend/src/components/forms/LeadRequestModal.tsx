@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { LeadAttributionFields } from "@/components/forms/LeadAttributionFields";
 import { PolicyConsent } from "@/components/forms/LeadCaptureForm";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -232,6 +233,7 @@ export function LeadRequestModal() {
         <p className="lead-modal__description">{payload.description}</p>
 
         <form className="lead-modal__form" action="/api/leads/" method="post">
+          <LeadAttributionFields />
           <input name="form_name" type="hidden" value={payload.formName} />
           <input name="lead_context_kind" type="hidden" value={payload.kind} />
           <input name="lead_context_topic" type="hidden" value={payload.topic} />

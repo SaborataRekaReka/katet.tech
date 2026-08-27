@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { LeadAttributionFields } from "@/components/forms/LeadAttributionFields";
 import { PolicyConsent } from "@/components/forms/LeadCaptureForm";
 import { Badge } from "@/components/ui/Badge";
 import { ActionLink, Button } from "@/components/ui/Button";
@@ -425,6 +426,7 @@ export function HomeDispatcherHero() {
 
         <aside className={styles.formCard}>
           <form id="lead" className={styles.form} action="/api/leads/" method="post">
+            <LeadAttributionFields />
             <input name="form_name" type="hidden" value="Главная — диспетчерская форма" />
             <div className={styles.formHead}>
               <h2>Оформить заявку</h2>
